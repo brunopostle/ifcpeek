@@ -1,4 +1,5 @@
 """Test built-in command functionality for Step 7 - IFC Query Execution."""
+
 import pytest
 from unittest.mock import patch, Mock
 from pathlib import Path

@@ -1,4 +1,5 @@
 """Integration tests for Step 7 - Built-in Commands Integration with Query Execution."""
+
 import pytest
 from unittest.mock import patch, Mock
 from pathlib import Path

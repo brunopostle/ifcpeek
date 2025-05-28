@@ -1,4 +1,5 @@
 """Test custom exception hierarchy."""
+
 import pytest
 
 from ifcpeek.exceptions import (

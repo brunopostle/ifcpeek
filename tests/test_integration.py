@@ -1,4 +1,5 @@
 """Integration tests for Step 7 - IFC Query Execution Integration."""
+
 import pytest
 import re
 from unittest.mock import patch, Mock, MagicMock
@@ -27,7 +28,8 @@ class TestMainToShellIntegration:
 
                 with patch("ifcpeek.shell.PromptSession", return_value=mock_session):
                     # Should complete successfully
-                    main()
+                    with patch("builtins.input", side_effect=EOFError):
+                        main()
 
         captured = capsys.readouterr()
         # Verify the complete workflow ran
@@ -55,7 +57,8 @@ class TestMainToShellIntegration:
 
             with patch.object(IfcPeek, "__init__", failing_init):
                 with pytest.raises(SystemExit) as exc_info:
-                    main()
+                    with patch("builtins.input", side_effect=EOFError):
+                        main()
 
                 assert exc_info.value.code == 1
 
@@ -74,7 +77,8 @@ class TestMainToShellIntegration:
                     IfcPeek, "run", side_effect=RuntimeError("Run failed")
                 ):
                     with pytest.raises(SystemExit) as exc_info:
-                        main()
+                        with patch("builtins.input", side_effect=EOFError):
+                            main()
 
                     assert exc_info.value.code == 1
 
@@ -124,7 +128,8 @@ class TestFileLoadingToShellLoop:
                     EOFError,
                 ]
 
-                shell.run()
+                with patch("builtins.input", side_effect=EOFError):
+                    shell.run()
 
             captured = capsys.readouterr()
 
@@ -220,7 +225,8 @@ class TestSignalHandlingIntegration:
                     EOFError,  # Final exit
                 ]
 
-                shell.run()
+                with patch("builtins.input", side_effect=EOFError):
+                    shell.run()
 
             captured = capsys.readouterr()
             assert (
@@ -264,7 +270,8 @@ class TestSignalHandlingIntegration:
                 with patch.object(shell, "session") as mock_session:
                     mock_session.prompt.side_effect = scenario
 
-                    shell.run()
+                    with patch("builtins.input", side_effect=EOFError):
+                        shell.run()
 
                 captured = capsys.readouterr()
                 # Every scenario should end with goodbye
@@ -301,7 +308,8 @@ class TestSignalHandlingIntegration:
                     EOFError,
                 ]
 
-                shell.run()
+                with patch("builtins.input", side_effect=EOFError):
+                    shell.run()
 
             captured = capsys.readouterr()
             assert captured.err.count("(Use Ctrl-D to exit)") == 2
@@ -359,7 +367,8 @@ class TestErrorRecoveryIntegration:
                         EOFError,  # Exit
                     ]
 
-                    shell.run()
+                    with patch("builtins.input", side_effect=EOFError):
+                        shell.run()
 
             captured = capsys.readouterr()
             assert "#1=IFCWALL('wall-guid'" in captured.out
@@ -406,7 +415,8 @@ class TestErrorRecoveryIntegration:
             with patch.object(shell, "session") as mock_session:
                 mock_session.prompt.side_effect = mock_prompt
 
-                shell.run()
+                with patch("builtins.input", side_effect=EOFError):
+                    shell.run()
 
             captured = capsys.readouterr()
             assert "#1=IFCWALL('wall-guid'" in captured.out

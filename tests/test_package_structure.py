@@ -1,4 +1,5 @@
 """Test package structure and imports."""
+
 import importlib
 import sys
 from pathlib import Path

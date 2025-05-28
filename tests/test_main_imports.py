@@ -1,4 +1,5 @@
 """Test main module imports and integration - Fixed for Step 3."""
+
 import sys
 from unittest.mock import patch
 import pytest

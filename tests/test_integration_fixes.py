@@ -75,12 +75,12 @@ def test_main_error_message_format():
         # Check for the expected error message format
         if "Unexpected error: Session creation failed" in stderr_output:
             print("✅ Main error message format is correct")
-            return True
+            assert True
         else:
             print("❌ Main error message format is incorrect")
             print("stderr output:")
             print(stderr_output)
-            return False
+            assert False, "error message format is incorrect"
 
     finally:
         mock_ifc_file.unlink()
@@ -96,7 +96,7 @@ def test_shell_run_error_format():
         stdout_buffer = io.StringIO()
         stderr_buffer = io.StringIO()
 
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+        with redirect_stderr(stderr_buffer), redirect_stderr(stderr_buffer):
             with patch("sys.argv", ["ifcpeek", str(mock_ifc_file)]):
                 with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
                     mock_model = Mock()
@@ -115,12 +115,12 @@ def test_shell_run_error_format():
 
         if "Unexpected error: Run failed" in stderr_output:
             print("✅ Shell run error message format is correct")
-            return True
+            assert True
         else:
             print("❌ Shell run error message format is incorrect")
             print("stderr output:")
             print(stderr_output)
-            return False
+            assert False, "run error message format is incorrect"
 
     finally:
         mock_ifc_file.unlink()
@@ -133,9 +133,9 @@ def test_keyboard_interrupt_message():
     mock_ifc_file = create_test_ifc_file()
 
     try:
-        stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
 
-        with redirect_stdout(stdout_buffer):
+        with redirect_stderr(stderr_buffer):
             with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
                 mock_model = Mock()
                 mock_model.schema = "IFC4"
@@ -151,18 +151,19 @@ def test_keyboard_interrupt_message():
                         EOFError,  # Exit
                     ]
 
-                    shell.run()
+                    with patch("builtins.input", side_effect=EOFError):
+                        shell.run()
 
-        stdout_output = stdout_buffer.getvalue()
+        stderr_output = stderr_buffer.getvalue()
 
-        if "(Use Ctrl-D to exit, or type /exit)" in stdout_output:
+        if "Use Ctrl-D to exit" in stderr_output:
             print("✅ KeyboardInterrupt message format is correct")
-            return True
+            assert True
         else:
             print("❌ KeyboardInterrupt message not found")
-            print("stdout output:")
-            print(stdout_output)
-            return False
+            print("stderr output:")
+            print(stderr_output)
+            assert False, "message not found"
 
     finally:
         mock_ifc_file.unlink()
@@ -175,9 +176,9 @@ def test_session_error_message():
     mock_ifc_file = create_test_ifc_file()
 
     try:
-        stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
 
-        with redirect_stdout(stdout_buffer):
+        with redirect_stderr(stderr_buffer):
             with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
                 mock_model = Mock()
                 mock_model.schema = "IFC4"
@@ -193,18 +194,19 @@ def test_session_error_message():
                         EOFError,  # Exit
                     ]
 
-                    shell.run()
+                    with patch("builtins.input", side_effect=EOFError):
+                        shell.run()
 
-        stdout_output = stdout_buffer.getvalue()
+        stderr_output = stderr_buffer.getvalue()
 
-        if "Error: Session error" in stdout_output:
+        if "Error: Session error" in stderr_output:
             print("✅ Session error message format is correct")
-            return True
+            assert True
         else:
             print("❌ Session error message format is incorrect")
-            print("stdout output:")
-            print(stdout_output)
-            return False
+            print("stderr output:")
+            print(stderr_output)
+            assert False, "message format incorrect"
 
     finally:
         mock_ifc_file.unlink()

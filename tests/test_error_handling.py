@@ -1,4 +1,5 @@
 """Comprehensive test cases for error handling and signal support."""
+
 import pytest
 import signal
 import time
@@ -202,20 +203,23 @@ class TestErrorHandling:
             mock_model = Mock()
             mock_open.return_value = mock_model
 
+            # Override test environment detection to allow session creation and test error handling
             with patch(
-                "ifcpeek.shell.PromptSession",
-                side_effect=PermissionError("Permission denied"),
+                "ifcpeek.shell.IfcPeek._is_in_test_environment", return_value=False
             ):
+                with patch(
+                    "ifcpeek.shell.PromptSession",
+                    side_effect=PermissionError("Permission denied"),
+                ):
 
-                with pytest.raises(ConfigurationError):
-                    IfcPeek(str(mock_ifc_file))
+                    with pytest.raises(ConfigurationError):
+                        IfcPeek(str(mock_ifc_file))
 
-                captured = capsys.readouterr()
-                assert (
-                    "ERROR: Session creation failed due to filesystem issue"
-                    in captured.err
-                )
-                assert "This is a critical configuration issue" in captured.err
+            captured = capsys.readouterr()
+            assert (
+                "ERROR: Session creation failed due to filesystem issue" in captured.err
+            )
+            assert "This is a critical configuration issue" in captured.err
 
 
 class TestSignalHandlingIntegration:
@@ -705,13 +709,13 @@ def test_complete_error_system():
         print("  • Context-rich exception classes")
         print("  • Performance optimization maintained")
         print("  • Memory usage stability")
-        return True
+        assert True
     else:
         failed_features = [k for k, v in test_results.items() if not v]
         print("❌ Some error handling features need attention:")
         for feature in failed_features:
             print(f"  • {feature}")
-        return False
+        assert False, "Failed features"
 
 
 if __name__ == "__main__":

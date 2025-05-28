@@ -1,4 +1,5 @@
 """Entry point for ifcpeek command."""
+
 import sys
 import argparse
 import traceback

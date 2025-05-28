@@ -123,7 +123,7 @@ with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
             for i, line in enumerate(stderr_lines[:10]):  # Show first 10 lines
                 print(f"  {i+1}: {line}")
 
-        return success
+        assert success, "Error message"
 
     finally:
         ifc_file.unlink()
@@ -173,7 +173,7 @@ with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
             print(f"   - Help in STDERR: {help_in_stderr}")
             print(f"   - Help not in STDOUT: {help_not_in_stdout}")
 
-        return success
+        assert success, "Error message"
 
     finally:
         ifc_file.unlink()
@@ -220,7 +220,7 @@ except SystemExit:
         if result.stdout:
             print(f"   - Unexpected STDOUT: {result.stdout[:100]}...")
 
-    return success
+    assert success, "Error message"
 
 
 def test_signal_handler_messages_stderr():
@@ -280,7 +280,7 @@ with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
             print(f"   - Signal message in STDERR: {signal_msg_in_stderr}")
             print(f"   - Signal message not in STDOUT: {signal_msg_not_in_stdout}")
 
-        return success
+        assert success, "Error message"
 
     finally:
         ifc_file.unlink()
@@ -334,7 +334,7 @@ with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
             print(f"   - Error not in STDOUT: {error_not_in_stdout}")
             print(f"   - Traceback in STDERR: {traceback_in_stderr}")
 
-        return success
+        assert success, "Error message"
 
     finally:
         ifc_file.unlink()
@@ -389,7 +389,7 @@ with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
             if result.stdout.strip():
                 print(f"   - Unexpected STDOUT: '{result.stdout}'")
 
-        return success
+        assert success, "Error message"
 
     finally:
         ifc_file.unlink()
@@ -465,7 +465,7 @@ with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
             print(f"   - Wall2 in STDOUT: {wall2_in_stdout}")
             print(f"   - No results in STDERR: {no_results_in_stderr}")
 
-        return success
+        assert success, "Error message"
 
     finally:
         ifc_file.unlink()
@@ -526,7 +526,7 @@ def main():
         print("   • Error messages: print(..., file=sys.stderr) → STDERR")
         print("   • Help text: print(..., file=sys.stderr) → STDERR")
         print("   • Tracebacks: traceback.print_exc(file=sys.stderr) → STDERR")
-        return True
+        assert True
     else:
         print(f"\n⚠️ {total - passed} tests still failing")
         print("Additional fixes may be needed for complete STDOUT/STDERR separation.")
@@ -536,7 +536,7 @@ def main():
         for test_name in failed_tests:
             print(f"   • {test_name}")
 
-        return False
+        assert False, "Error message"
 
 
 if __name__ == "__main__":

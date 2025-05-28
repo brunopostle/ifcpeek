@@ -1,4 +1,5 @@
 """Test configuration management functionality with fixed error handling expectations."""
+
 import os
 import stat
 import tempfile

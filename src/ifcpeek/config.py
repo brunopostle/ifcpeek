@@ -1,4 +1,5 @@
 """Configuration and file path management with error handling."""
+
 import os
 import sys
 import traceback
@@ -362,9 +363,11 @@ def create_directory_with_error_handling(
             "directory_path": str(directory_path),
             "parent_path": str(directory_path.parent),
             "parent_exists": directory_path.parent.exists(),
-            "parent_writable": os.access(directory_path.parent, os.W_OK)
-            if directory_path.parent.exists()
-            else False,
+            "parent_writable": (
+                os.access(directory_path.parent, os.W_OK)
+                if directory_path.parent.exists()
+                else False
+            ),
         }
 
         print(f"ERROR: Permission denied creating {purpose}", file=sys.stderr)
@@ -444,9 +447,11 @@ def get_system_info() -> dict:
                 "HOME": os.environ.get("HOME", "Not set"),
                 "XDG_STATE_HOME": os.environ.get("XDG_STATE_HOME", "Not set"),
                 "XDG_CACHE_HOME": os.environ.get("XDG_CACHE_HOME", "Not set"),
-                "PATH": os.environ.get("PATH", "Not set")[:200] + "..."
-                if len(os.environ.get("PATH", "")) > 200
-                else os.environ.get("PATH", "Not set"),
+                "PATH": (
+                    os.environ.get("PATH", "Not set")[:200] + "..."
+                    if len(os.environ.get("PATH", "")) > 200
+                    else os.environ.get("PATH", "Not set")
+                ),
             },
         }
 

@@ -1,4 +1,5 @@
 """Test main module functionality for Step 3."""
+
 import subprocess
 import sys
 from unittest.mock import patch, MagicMock

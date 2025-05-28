@@ -1,4 +1,5 @@
 """Test configuration with history integration support."""
+
 import os
 import stat
 import tempfile
