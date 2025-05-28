@@ -63,8 +63,6 @@ ifcpeek path/to/your/model.ifc < queries.txt > results.txt
 | `Up/Down` | Navigate command history |
 | `Ctrl-R` | Search command history |
 
-```
-
 ## Testing
 
 ### Run All Tests
