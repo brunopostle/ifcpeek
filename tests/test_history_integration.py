@@ -10,7 +10,6 @@ from unittest.mock import patch, Mock
 from prompt_toolkit.history import FileHistory
 
 from ifcpeek.shell import IfcPeek
-from ifcpeek.config import get_history_file_path
 
 
 class HistoryIntegrationValidator:
@@ -317,7 +316,7 @@ END-ISO-10303-21;"""
 
                     # Test shell creation time with large history
                     shell_start = time.time()
-                    shell = IfcPeek(str(ifc_file))
+                    IfcPeek(str(ifc_file))
                     shell_time = time.time() - shell_start
 
                     # Performance should be reasonable
@@ -369,7 +368,7 @@ END-ISO-10303-21;"""
                     with patch(
                         "ifcpeek.shell.PromptSession", return_value=mock_session
                     ) as mock_prompt:
-                        shell = IfcPeek(str(ifc_file))
+                        IfcPeek(str(ifc_file))
 
                         # Verify PromptSession created with history
                         session_created = mock_prompt.called
@@ -488,7 +487,7 @@ END-ISO-10303-21;"""
                         "ifcpeek.config.get_history_file_path",
                         side_effect=mock_get_history_path,
                     ):
-                        shell = IfcPeek(str(ifc_file))
+                        IfcPeek(str(ifc_file))
 
                         # Verify XDG compliance
                         xdg_compliant = expected_config_dir.exists()

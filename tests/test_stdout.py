@@ -8,9 +8,6 @@ import tempfile
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch, Mock
-import io
-from contextlib import redirect_stdout, redirect_stderr
 
 
 def create_test_ifc_file():

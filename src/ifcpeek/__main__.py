@@ -3,7 +3,6 @@
 import sys
 import argparse
 import traceback
-from pathlib import Path
 from .shell import IfcPeek
 from .exceptions import IfcPeekError
 

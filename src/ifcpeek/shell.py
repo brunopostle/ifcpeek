@@ -5,12 +5,10 @@ import re
 import sys
 import signal
 import traceback
-from pathlib import Path
 import ifcopenshell
 import ifcopenshell.util.selector
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
-from prompt_toolkit.shortcuts import print_formatted_text
 
 from .config import validate_ifc_file_path, get_history_file_path
 from .exceptions import InvalidIfcFileError, ConfigurationError
@@ -455,7 +453,7 @@ class IfcPeek:
             error_msg = f"Failed to load IFC file '{self.ifc_file_path.name}': {str(e)}"
 
             error_str_lower = str(e).lower()
-            exception_type = type(e).__name__
+            type(e).__name__
 
             # Add specific hints based on exception types and messages
             if isinstance(e, ValueError) and (
@@ -530,7 +528,7 @@ class IfcPeek:
                 completer=None,  # No auto-completion to avoid interference
             )
 
-            print(f"Command history initialized successfully", file=sys.stderr)
+            print("Command history initialized successfully", file=sys.stderr)
             return session
 
         except ConfigurationError:
@@ -546,7 +544,7 @@ class IfcPeek:
             error_str = str(e).lower()
 
             print(
-                f"ERROR: Session creation failed due to filesystem issue",
+                "ERROR: Session creation failed due to filesystem issue",
                 file=sys.stderr,
             )
             print(f"Error type: {type(e).__name__}", file=sys.stderr)
@@ -866,7 +864,7 @@ Error handling provides full debugging information.
             return True
 
         except Exception as e:
-            print(f"ERROR: Failed to display help information", file=sys.stderr)
+            print("ERROR: Failed to display help information", file=sys.stderr)
             print(f"Error type: {type(e).__name__}: {e}", file=sys.stderr)
             print("Full traceback:", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
@@ -987,7 +985,7 @@ Error handling provides full debugging information.
                     continue
 
         except Exception as e:
-            print(f"CRITICAL ERROR: Shell run loop failed", file=sys.stderr)
+            print("CRITICAL ERROR: Shell run loop failed", file=sys.stderr)
             print(f"Error type: {type(e).__name__}", file=sys.stderr)
             print(f"Error message: {e}", file=sys.stderr)
             print("\nFull traceback:", file=sys.stderr)

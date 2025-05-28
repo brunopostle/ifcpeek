@@ -2,12 +2,10 @@
 
 import pytest
 import re
-from unittest.mock import patch, Mock, MagicMock
-from pathlib import Path
+from unittest.mock import patch, Mock
 
 from ifcpeek.__main__ import main
 from ifcpeek.shell import IfcPeek
-from ifcpeek.exceptions import IfcPeekError
 
 
 class TestMainToShellIntegration:
@@ -185,7 +183,7 @@ class TestFileLoadingToShellLoop:
             "ifcpeek.shell.ifcopenshell.open", side_effect=RuntimeError("Load failed")
         ):
             with pytest.raises(Exception) as exc_info:
-                shell = IfcPeek(str(mock_ifc_file))
+                IfcPeek(str(mock_ifc_file))
 
             # Should not reach shell.run()
             assert "Failed to load IFC file" in str(exc_info.value)

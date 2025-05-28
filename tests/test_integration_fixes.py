@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch, Mock
 import io
 from contextlib import redirect_stdout, redirect_stderr
-import pytest
 
 # Add the source directory to Python path for testing
 sys.path.insert(0, "src")
@@ -93,7 +92,7 @@ def test_shell_run_error_format():
     mock_ifc_file = create_test_ifc_file()
 
     try:
-        stdout_buffer = io.StringIO()
+        io.StringIO()
         stderr_buffer = io.StringIO()
 
         with redirect_stderr(stderr_buffer), redirect_stderr(stderr_buffer):

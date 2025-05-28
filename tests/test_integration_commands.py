@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import patch, Mock
-from pathlib import Path
 
 from ifcpeek.__main__ import main
 from ifcpeek.shell import IfcPeek
@@ -14,7 +13,6 @@ class TestMainToCommandsIntegration:
     def test_main_can_import_shell_with_commands(self, mock_ifc_file):
         """Test that main can import shell and shell has command system."""
         # Test that imports work correctly
-        from ifcpeek.__main__ import main
         from ifcpeek.shell import IfcPeek
 
         # Test that IfcPeek has command system when instantiated
@@ -72,7 +70,6 @@ class TestMainToCommandsIntegration:
 
     def test_argument_parsing_integration(self):
         """Test that argument parsing works with command system."""
-        import sys
         from unittest.mock import patch
 
         # Test that main accepts IFC file argument (without actually running)

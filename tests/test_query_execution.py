@@ -2,7 +2,6 @@
 Comprehensive test to validate the complete IFC query execution workflow.
 """
 
-import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, Mock

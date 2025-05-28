@@ -4,7 +4,6 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import Optional
 
 from .exceptions import (
     ConfigurationError,
@@ -67,7 +66,7 @@ def get_history_file_path() -> Path:
         # Create directory with error handling
         try:
             config_dir.mkdir(parents=True, exist_ok=True)
-            print(f"DEBUG: Directory creation successful", file=sys.stderr)
+            print("DEBUG: Directory creation successful", file=sys.stderr)
         except PermissionError as perm_error:
             print(
                 f"ERROR: Permission denied creating directory: {config_dir}",

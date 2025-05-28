@@ -2,15 +2,11 @@
 
 import pytest
 import signal
-import time
 from unittest.mock import patch, Mock
-from io import StringIO
-from contextlib import redirect_stdout, redirect_stderr
 
 from ifcpeek.shell import IfcPeek
 from ifcpeek.__main__ import main
 from ifcpeek.exceptions import (
-    IfcPeekError,
     FileNotFoundError,
     InvalidIfcFileError,
     QueryExecutionError,
@@ -81,7 +77,7 @@ class TestErrorHandling:
             mock_open.return_value = mock_model
 
             with patch("signal.signal") as mock_signal:
-                shell = IfcPeek(str(mock_ifc_file))
+                IfcPeek(str(mock_ifc_file))
 
                 # Verify signal handlers were set up
                 assert mock_signal.call_count >= 2
@@ -286,7 +282,7 @@ class TestSignalHandlingIntegration:
             mock_open.return_value = mock_model
 
             with patch("signal.signal", side_effect=OSError("Signal setup failed")):
-                shell = IfcPeek(str(mock_ifc_file))
+                IfcPeek(str(mock_ifc_file))
 
                 captured = capsys.readouterr()
                 assert "WARNING: Could not setup signal handlers" in captured.err

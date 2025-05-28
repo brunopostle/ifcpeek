@@ -6,8 +6,6 @@ This validates the entire error handling workflow from start to finish.
 import tempfile
 import time
 import signal
-import subprocess
-import sys
 from pathlib import Path
 from unittest.mock import patch, Mock
 from io import StringIO
@@ -17,7 +15,6 @@ from ifcpeek.shell import IfcPeek
 from ifcpeek.__main__ import main
 from ifcpeek.config import (
     get_config_dir,
-    get_history_file_path,
     validate_ifc_file_path,
 )
 from ifcpeek.exceptions import *
@@ -642,7 +639,7 @@ END-ISO-10303-21;"""
                             result = shell._process_input(step_input)
                             step_results.append(result == expected_result)
 
-                        except Exception as step_error:
+                        except Exception:
                             step_results.append(False)
 
                 # Evaluate end-to-end success

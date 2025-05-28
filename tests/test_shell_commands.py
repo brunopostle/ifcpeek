@@ -2,7 +2,6 @@
 
 import pytest
 from unittest.mock import patch, Mock
-from pathlib import Path
 
 from ifcpeek.shell import IfcPeek
 

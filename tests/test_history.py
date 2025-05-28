@@ -4,13 +4,10 @@ These tests focus on verifiable integration points rather than complex mocking.
 """
 
 import pytest
-import tempfile
-from pathlib import Path
 from unittest.mock import patch, Mock
 from prompt_toolkit.history import FileHistory
 
 from ifcpeek.shell import IfcPeek
-from ifcpeek.exceptions import ConfigurationError
 
 
 class TestHistoryIntegrationWorking:

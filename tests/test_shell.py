@@ -2,14 +2,12 @@
 
 import re
 import pytest
-from unittest.mock import patch, MagicMock, Mock
+from unittest.mock import patch, Mock
 from pathlib import Path
-from prompt_toolkit import PromptSession
 
 import ifcpeek
 from ifcpeek.shell import IfcPeek
 from ifcpeek.exceptions import (
-    IfcPeekError,
     FileNotFoundError,
     InvalidIfcFileError,
 )
@@ -142,7 +140,7 @@ class TestLoadModelMethod:
             mock_model = Mock()
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            IfcPeek(str(mock_ifc_file))
 
             # Verify the correct path was used
             called_path = mock_open.call_args[0][0]
