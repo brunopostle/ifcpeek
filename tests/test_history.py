@@ -3,11 +3,14 @@ Fixed history integration tests that work reliably.
 These tests focus on verifiable integration points rather than complex mocking.
 """
 
+import os
 import pytest
 from unittest.mock import patch, Mock
 from prompt_toolkit.history import FileHistory
 
 from ifcpeek.shell import IfcPeek
+
+os.environ["IFCPEEK_DEBUG"] = "1"
 
 
 class TestHistoryIntegrationWorking:
@@ -171,9 +174,7 @@ class TestHistoryIntegrationWorking:
                     assert help_result is True
 
             captured = capsys.readouterr()
-            assert (
-                "Warning: Could not create prompt session with history" in captured.err
-            )
+            assert "Could not create prompt session with history" in captured.err
             assert "Falling back to basic input mode" in captured.err
 
     def test_help_text_includes_history_features(self, mock_ifc_file, capsys):

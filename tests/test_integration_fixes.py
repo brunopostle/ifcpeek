@@ -5,10 +5,13 @@ Test to verify the integration error message fixes.
 
 import tempfile
 import sys
+import os
 from pathlib import Path
 from unittest.mock import patch, Mock
 import io
 from contextlib import redirect_stdout, redirect_stderr
+
+os.environ["IFCPEEK_DEBUG"] = "1"
 
 # Add the source directory to Python path for testing
 sys.path.insert(0, "src")
@@ -198,7 +201,7 @@ def test_session_error_message():
 
         stderr_output = stderr_buffer.getvalue()
 
-        if "Error: Session error" in stderr_output:
+        if "Unexpected error: Session error" in stderr_output:
             print("✅ Session error message format is correct")
             assert True
         else:

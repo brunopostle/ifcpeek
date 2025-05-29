@@ -7,7 +7,10 @@ This validates that the fixed code properly separates query results and messages
 import tempfile
 import subprocess
 import sys
+import os
 from pathlib import Path
+
+os.environ["IFCPEEK_DEBUG"] = "1"
 
 
 def create_test_ifc_file():

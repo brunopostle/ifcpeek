@@ -2,10 +2,13 @@
 
 import pytest
 import re
+import os
 from unittest.mock import patch, Mock
 
 from ifcpeek.__main__ import main
 from ifcpeek.shell import IfcPeek
+
+os.environ["IFCPEEK_DEBUG"] = "1"
 
 
 class TestMainToShellIntegration:
@@ -312,7 +315,7 @@ class TestSignalHandlingIntegration:
             captured = capsys.readouterr()
             assert captured.err.count("(Use Ctrl-D to exit)") == 2
             assert "#1=IFCWALL('wall-guid'" in captured.out
-            assert "Error: processing error" in captured.err
+            assert "Unexpected error: processing error" in captured.err
             assert "Goodbye!" in captured.err
 
 
@@ -418,7 +421,7 @@ class TestErrorRecoveryIntegration:
 
             captured = capsys.readouterr()
             assert "#1=IFCWALL('wall-guid'" in captured.out
-            assert "Error: Session error" in captured.err
+            assert "Unexpected error: Session error" in captured.err
             # Note: The shell continues but the session.prompt will be called again
             # This tests that the shell loop continues after session errors
 

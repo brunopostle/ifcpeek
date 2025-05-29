@@ -3,6 +3,7 @@
 import sys
 import argparse
 import traceback
+import os
 from .shell import IfcPeek
 from .exceptions import IfcPeekError
 
@@ -14,17 +15,39 @@ def main() -> None:
         description="Interactive shell for querying IFC models",
     )
     parser.add_argument("ifc_file", help="Path to IFC file")
+    parser.add_argument(
+        "--debug", action="store_true", help="Enable debug output (disabled by default)"
+    )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Enable verbose startup information",
+    )
 
     try:
         args = parser.parse_args()
 
-        print("=" * 60, file=sys.stderr)
-        print("IfcPeek - Starting", file=sys.stderr)
-        print("=" * 60, file=sys.stderr)
-        print(f"Target file: {args.ifc_file}", file=sys.stderr)
-        print(f"Python version: {sys.version}", file=sys.stderr)
-        print("Error handling and debugging active", file=sys.stderr)
-        print("=" * 60, file=sys.stderr)
+        # Set debug environment variable for the shell
+        if args.debug:
+            os.environ["IFCPEEK_DEBUG"] = "1"
+
+        if args.verbose:
+            os.environ["IFCPEEK_VERBOSE"] = "1"
+
+        # Show startup info if verbose or debug mode
+        if args.verbose or args.debug:
+            print("=" * 60, file=sys.stderr)
+            print("IfcPeek - Starting", file=sys.stderr)
+            print("=" * 60, file=sys.stderr)
+            print(f"Target file: {args.ifc_file}", file=sys.stderr)
+            print(f"Python version: {sys.version}", file=sys.stderr)
+            print(
+                f"Debug mode: {'enabled' if args.debug else 'disabled'}",
+                file=sys.stderr,
+            )
+            print("Error handling and debugging active", file=sys.stderr)
+            print("=" * 60, file=sys.stderr)
 
         # Create and run the IfcPeek with error reporting
         shell = None

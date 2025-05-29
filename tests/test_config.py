@@ -376,86 +376,169 @@ class TestErrorHandling:
 
     def test_debug_output_in_validation(self, temp_dir, capsys):
         """Test that validation produces debug output."""
-        ifc_file = temp_dir / "debug_test.ifc"
-        ifc_file.write_text("ISO-10303-21;")
+        # Enable debug mode for this test
+        original_debug = os.environ.get("IFCPEEK_DEBUG")
+        os.environ["IFCPEEK_DEBUG"] = "1"
 
-        validate_ifc_file_path(str(ifc_file))
+        try:
+            ifc_file = temp_dir / "debug_test.ifc"
+            ifc_file.write_text("ISO-10303-21;")
 
-        captured = capsys.readouterr()
-        debug_output = captured.err  # CHANGED: expect debug in STDERR
+            validate_ifc_file_path(str(ifc_file))
 
-        # Should contain debug information
-        assert "DEBUG: Validating IFC file path:" in debug_output
-        assert "DEBUG: File size:" in debug_output
-        assert "DEBUG: File permissions:" in debug_output
-        assert "DEBUG: File validation successful:" in debug_output
+            captured = capsys.readouterr()
+            debug_output = captured.err  # CHANGED: expect debug in STDERR
+
+            # Should contain debug information
+            assert "DEBUG: Validating IFC file path:" in debug_output
+            assert "DEBUG: File size:" in debug_output
+            assert "DEBUG: File permissions:" in debug_output
+            assert "DEBUG: File validation successful:" in debug_output
+        finally:
+            # Clean up - restore original state
+            if original_debug is None:
+                os.environ.pop("IFCPEEK_DEBUG", None)
+            else:
+                os.environ["IFCPEEK_DEBUG"] = original_debug
 
     def test_comprehensive_file_analysis(self, temp_dir, capsys):
         """Test comprehensive file analysis during validation."""
-        # Create file with specific content
-        ifc_file = temp_dir / "analysis_test.ifc"
-        ifc_content = """ISO-10303-21;
+        # Enable debug mode for this test
+        original_debug = os.environ.get("IFCPEEK_DEBUG")
+        os.environ["IFCPEEK_DEBUG"] = "1"
+
+        try:
+            # Create file with specific content
+            ifc_file = temp_dir / "analysis_test.ifc"
+            ifc_content = """ISO-10303-21;
 HEADER;
 FILE_DESCRIPTION(('Test'),'2;1');
 ENDSEC;
 DATA;
 ENDSEC;
 END-ISO-10303-21;"""
-        ifc_file.write_text(ifc_content)
+            ifc_file.write_text(ifc_content)
 
-        validate_ifc_file_path(str(ifc_file))
-
-        captured = capsys.readouterr()
-        debug_output = captured.err  # CHANGED: expect debug in STDERR
-
-        # Should contain file content analysis
-        assert "DEBUG: First few lines of file:" in debug_output
-        assert "File appears to have valid IFC header" in debug_output
-
-    def test_invalid_content_detection(self, temp_dir, capsys):
-        """Test detection of invalid IFC content."""
-        # Create file with invalid content but valid extension
-        invalid_file = temp_dir / "invalid.ifc"
-        invalid_file.write_text("This is not IFC content")
-
-        validate_ifc_file_path(str(invalid_file))  # Should still pass due to extension
-
-        captured = capsys.readouterr()
-        debug_output = captured.err  # CHANGED: expect debug in STDERR
-
-        # Should warn about invalid content
-        assert "WARNING: File does not start with standard IFC header" in debug_output
-
-    def test_permission_analysis(self, temp_dir, capsys):
-        """Test permission analysis in debug output."""
-        ifc_file = temp_dir / "permission_test.ifc"
-        ifc_file.write_text("ISO-10303-21;")
-
-        validate_ifc_file_path(str(ifc_file))
-
-        captured = capsys.readouterr()
-        debug_output = captured.err  # CHANGED: expect debug in STDERR
-
-        # Should include permission information
-        assert "DEBUG: File readable:" in debug_output
-
-    def test_traceback_on_unexpected_errors(self, capsys):
-        """Test that unexpected errors show full tracebacks."""
-        # Mock Path to cause an unexpected error
-        with patch("ifcpeek.config.Path") as mock_path:
-            mock_path.side_effect = RuntimeError("Unexpected path error")
-
-            try:
-                validate_ifc_file_path("test.ifc")
-            except InvalidIfcFileError:
-                pass  # Expected
+            validate_ifc_file_path(str(ifc_file))
 
             captured = capsys.readouterr()
             debug_output = captured.err  # CHANGED: expect debug in STDERR
 
-            # Should show full traceback
-            assert "Full traceback:" in debug_output
-            assert "ERROR: Unexpected error during file validation" in debug_output
+            # Should contain file content analysis
+            assert "DEBUG: First few lines of file:" in debug_output
+            assert "DEBUG: File appears to have valid IFC header" in debug_output
+        finally:
+            # Clean up - restore original state
+            if original_debug is None:
+                os.environ.pop("IFCPEEK_DEBUG", None)
+            else:
+                os.environ["IFCPEEK_DEBUG"] = original_debug
+
+    def test_invalid_content_detection(self, temp_dir, capsys):
+        """Test detection of invalid IFC content."""
+        # Enable debug mode for this test
+        original_debug = os.environ.get("IFCPEEK_DEBUG")
+        os.environ["IFCPEEK_DEBUG"] = "1"
+
+        try:
+            # Create file with invalid content but valid extension
+            invalid_file = temp_dir / "invalid.ifc"
+            invalid_file.write_text("This is not IFC content")
+
+            validate_ifc_file_path(
+                str(invalid_file)
+            )  # Should still pass due to extension
+
+            captured = capsys.readouterr()
+            debug_output = captured.err  # CHANGED: expect debug in STDERR
+
+            # Should warn about invalid content
+            assert (
+                "WARNING: File does not start with standard IFC header" in debug_output
+            )
+        finally:
+            # Clean up - restore original state
+            if original_debug is None:
+                os.environ.pop("IFCPEEK_DEBUG", None)
+            else:
+                os.environ["IFCPEEK_DEBUG"] = original_debug
+
+    def test_permission_analysis(self, temp_dir, capsys):
+        """Test permission analysis in debug output."""
+        # Enable debug mode for this test
+        original_debug = os.environ.get("IFCPEEK_DEBUG")
+        os.environ["IFCPEEK_DEBUG"] = "1"
+
+        try:
+            ifc_file = temp_dir / "permission_test.ifc"
+            ifc_file.write_text("ISO-10303-21;")
+
+            validate_ifc_file_path(str(ifc_file))
+
+            captured = capsys.readouterr()
+            debug_output = captured.err  # CHANGED: expect debug in STDERR
+
+            # Should include permission information
+            assert "DEBUG: File readable:" in debug_output
+        finally:
+            # Clean up - restore original state
+            if original_debug is None:
+                os.environ.pop("IFCPEEK_DEBUG", None)
+            else:
+                os.environ["IFCPEEK_DEBUG"] = original_debug
+
+    def test_traceback_on_unexpected_errors(self, capsys):
+        """Test that unexpected errors show full tracebacks."""
+        # Enable debug mode for this test
+        original_debug = os.environ.get("IFCPEEK_DEBUG")
+        os.environ["IFCPEEK_DEBUG"] = "1"
+
+        try:
+            # Mock Path to cause an unexpected error
+            with patch("ifcpeek.config.Path") as mock_path:
+                mock_path.side_effect = RuntimeError("Unexpected path error")
+
+                try:
+                    validate_ifc_file_path("test.ifc")
+                except InvalidIfcFileError:
+                    pass  # Expected
+
+                captured = capsys.readouterr()
+                debug_output = captured.err  # CHANGED: expect debug in STDERR
+
+                # Should show full traceback
+                assert "DEBUG: Full traceback:" in debug_output
+                assert "ERROR: Unexpected error during file validation" in debug_output
+        finally:
+            # Clean up - restore original state
+            if original_debug is None:
+                os.environ.pop("IFCPEEK_DEBUG", None)
+            else:
+                os.environ["IFCPEEK_DEBUG"] = original_debug
+
+    def test_debug_mode_disabled_by_default(self, temp_dir, capsys):
+        """Test that debug output is disabled by default."""
+        # Ensure debug mode is disabled
+        original_debug = os.environ.get("IFCPEEK_DEBUG")
+        os.environ.pop("IFCPEEK_DEBUG", None)
+
+        try:
+            ifc_file = temp_dir / "no_debug_test.ifc"
+            ifc_file.write_text("ISO-10303-21;")
+
+            validate_ifc_file_path(str(ifc_file))
+
+            captured = capsys.readouterr()
+            debug_output = captured.err
+
+            # Should NOT contain debug information
+            assert "DEBUG: Validating IFC file path:" not in debug_output
+            assert "DEBUG: File size:" not in debug_output
+            assert "DEBUG: File permissions:" not in debug_output
+        finally:
+            # Clean up - restore original state
+            if original_debug is not None:
+                os.environ["IFCPEEK_DEBUG"] = original_debug
 
 
 class TestSystemInformation:
@@ -474,13 +557,139 @@ class TestSystemInformation:
 
     def test_print_debug_info(self, capsys):
         """Test debug information printing."""
-        from ifcpeek.config import print_debug_info
+        # Enable debug mode for this test
+        original_debug = os.environ.get("IFCPEEK_DEBUG")
+        os.environ["IFCPEEK_DEBUG"] = "1"
 
-        print_debug_info()
+        try:
+            from ifcpeek.config import print_debug_info
 
-        captured = capsys.readouterr()
-        debug_output = captured.err  # CHANGED: expect debug in STDERR
+            print_debug_info()
 
-        # Should contain comprehensive debug information
-        assert "IFCPEEK CONFIGURATION DEBUG INFORMATION" in debug_output
-        assert "CONFIGURATION PATHS:" in debug_output
+            captured = capsys.readouterr()
+            debug_output = captured.err  # CHANGED: expect debug in STDERR
+
+            # Should contain comprehensive debug information
+            assert "IFCPEEK CONFIGURATION DEBUG INFORMATION" in debug_output
+            assert "CONFIGURATION PATHS:" in debug_output
+        finally:
+            # Clean up - restore original state
+            if original_debug is None:
+                os.environ.pop("IFCPEEK_DEBUG", None)
+            else:
+                os.environ["IFCPEEK_DEBUG"] = original_debug
+
+    def test_print_debug_info_disabled_by_default(self, capsys):
+        """Test that debug info printing is disabled by default."""
+        # Ensure debug mode is disabled
+        original_debug = os.environ.get("IFCPEEK_DEBUG")
+        os.environ.pop("IFCPEEK_DEBUG", None)
+
+        try:
+            from ifcpeek.config import print_debug_info
+
+            print_debug_info()
+
+            captured = capsys.readouterr()
+            debug_output = captured.err
+
+            # Should show disabled message, not full debug info
+            assert (
+                "Debug mode is disabled. Use --debug to enable detailed information."
+                in debug_output
+            )
+            assert "IFCPEEK CONFIGURATION DEBUG INFORMATION" not in debug_output
+        finally:
+            # Clean up - restore original state
+            if original_debug is not None:
+                os.environ["IFCPEEK_DEBUG"] = original_debug
+
+
+class TestDebugModeToggling:
+    """Test debug mode toggling functionality."""
+
+    def test_debug_mode_environment_variable(self, temp_dir, capsys):
+        """Test debug mode controlled by environment variable."""
+        # Test with debug enabled
+        original_debug = os.environ.get("IFCPEEK_DEBUG")
+        os.environ["IFCPEEK_DEBUG"] = "1"
+
+        try:
+            from ifcpeek.debug import is_debug_enabled
+
+            assert is_debug_enabled() is True
+
+            # Test debug output appears
+            ifc_file = temp_dir / "env_debug_test.ifc"
+            ifc_file.write_text("ISO-10303-21;")
+
+            validate_ifc_file_path(str(ifc_file))
+
+            captured = capsys.readouterr()
+            debug_output = captured.err
+
+            assert "DEBUG: Validating IFC file path:" in debug_output
+
+        finally:
+            # Clean up
+            if original_debug is None:
+                os.environ.pop("IFCPEEK_DEBUG", None)
+            else:
+                os.environ["IFCPEEK_DEBUG"] = original_debug
+
+    def test_debug_mode_functions(self):
+        """Test debug mode enable/disable functions."""
+        from ifcpeek.debug import enable_debug, disable_debug, is_debug_enabled
+
+        # Save original state
+        original_debug = os.environ.get("IFCPEEK_DEBUG")
+
+        try:
+            # Test enabling
+            enable_debug()
+            assert is_debug_enabled() is True
+            assert os.environ.get("IFCPEEK_DEBUG") == "1"
+
+            # Test disabling
+            disable_debug()
+            assert is_debug_enabled() is False
+            assert "IFCPEEK_DEBUG" not in os.environ
+
+        finally:
+            # Restore original state
+            if original_debug is None:
+                os.environ.pop("IFCPEEK_DEBUG", None)
+            else:
+                os.environ["IFCPEEK_DEBUG"] = original_debug
+
+    def test_verbose_mode_functions(self):
+        """Test verbose mode enable/disable functions."""
+        from ifcpeek.debug import enable_verbose, disable_verbose, is_verbose_enabled
+
+        # Save original state
+        original_verbose = os.environ.get("IFCPEEK_VERBOSE")
+
+        try:
+            # Test enabling
+            enable_verbose()
+            assert is_verbose_enabled() is True
+            assert os.environ.get("IFCPEEK_VERBOSE") == "1"
+
+            # Test disabling
+            disable_verbose()
+            assert is_verbose_enabled() is False
+            assert "IFCPEEK_VERBOSE" not in os.environ
+
+        finally:
+            # Restore original state
+            if original_verbose is None:
+                os.environ.pop("IFCPEEK_VERBOSE", None)
+            else:
+                os.environ["IFCPEEK_VERBOSE"] = original_verbose
+
+
+# Test fixtures
+@pytest.fixture
+def temp_dir(tmp_path):
+    """Provide a temporary directory for tests."""
+    return tmp_path

@@ -1,4 +1,4 @@
-"""Configuration and file path management with error handling."""
+"""Configuration and file path management with controlled debug output."""
 
 import os
 import sys
@@ -10,23 +10,27 @@ from .exceptions import (
     FileNotFoundError,
     InvalidIfcFileError,
 )
+from .debug import (
+    debug_print,
+    verbose_print,
+    error_print,
+    warning_print,
+    is_debug_enabled,
+)
 
 
 def get_config_dir() -> Path:
-    """Get XDG-compliant config directory with error handling."""
+    """Get XDG-compliant config directory with controlled debug output."""
     try:
         if xdg_state := os.environ.get("XDG_STATE_HOME"):
             config_path = Path(xdg_state) / "ifcpeek"
         else:
             config_path = Path.home() / ".local" / "state" / "ifcpeek"
 
-        # Debugging information to STDERR
-        print(f"DEBUG: Config directory determined: {config_path}", file=sys.stderr)
-        print(
-            f"DEBUG: XDG_STATE_HOME: {os.environ.get('XDG_STATE_HOME', 'Not set')}",
-            file=sys.stderr,
-        )
-        print(f"DEBUG: Home directory: {Path.home()}", file=sys.stderr)
+        # Debug information only if debug mode is enabled
+        debug_print(f"Config directory determined: {config_path}")
+        debug_print(f"XDG_STATE_HOME: {os.environ.get('XDG_STATE_HOME', 'Not set')}")
+        debug_print(f"Home directory: {Path.home()}")
 
         return config_path
 
@@ -37,12 +41,13 @@ def get_config_dir() -> Path:
             "error_type": type(e).__name__,
         }
 
-        print("ERROR: Failed to determine configuration directory", file=sys.stderr)
-        print("DEBUG INFORMATION:", file=sys.stderr)
+        error_print("Failed to determine configuration directory")
+        debug_print("DEBUG INFORMATION:")
         for key, value in error_context.items():
-            print(f"  {key}: {value}", file=sys.stderr)
-        print("Full traceback:", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+            debug_print(f"  {key}: {value}")
+        debug_print("Full traceback:")
+        if is_debug_enabled():
+            traceback.print_exc(file=sys.stderr)
 
         raise ConfigurationError(
             f"Failed to determine config directory: {e}", system_info=error_context
@@ -50,43 +55,37 @@ def get_config_dir() -> Path:
 
 
 def get_history_file_path() -> Path:
-    """Get history file path with error handling, creating directory if needed."""
+    """Get history file path with controlled debug output, creating directory if needed."""
     try:
         config_dir = get_config_dir()
 
-        print(
-            f"DEBUG: Creating config directory if needed: {config_dir}", file=sys.stderr
-        )
-        print(f"DEBUG: Directory exists: {config_dir.exists()}", file=sys.stderr)
-        print(
-            f"DEBUG: Directory is dir: {config_dir.is_dir() if config_dir.exists() else 'N/A'}",
-            file=sys.stderr,
+        debug_print(f"Creating config directory if needed: {config_dir}")
+        debug_print(f"Directory exists: {config_dir.exists()}")
+        debug_print(
+            f"Directory is dir: {config_dir.is_dir() if config_dir.exists() else 'N/A'}"
         )
 
         # Create directory with error handling
         try:
             config_dir.mkdir(parents=True, exist_ok=True)
-            print("DEBUG: Directory creation successful", file=sys.stderr)
+            debug_print("Directory creation successful")
         except PermissionError as perm_error:
-            print(
-                f"ERROR: Permission denied creating directory: {config_dir}",
-                file=sys.stderr,
-            )
-            print(f"Permission error: {perm_error}", file=sys.stderr)
+            error_print(f"Permission denied creating directory: {config_dir}")
+            debug_print(f"Permission error: {perm_error}")
             raise ConfigurationError(
                 f"Failed to create history file path: Permission denied creating config directory: {config_dir}",
                 config_path=str(config_dir),
             ) from perm_error
         except OSError as os_error:
-            print(f"ERROR: OS error creating directory: {config_dir}", file=sys.stderr)
-            print(f"OS error: {os_error}", file=sys.stderr)
+            error_print(f"OS error creating directory: {config_dir}")
+            debug_print(f"OS error: {os_error}")
             raise ConfigurationError(
                 f"Failed to create history file path: OS error creating config directory: {config_dir}",
                 config_path=str(config_dir),
             ) from os_error
 
         history_path = config_dir / "history"
-        print(f"DEBUG: History file path: {history_path}", file=sys.stderr)
+        debug_print(f"History file path: {history_path}")
 
         return history_path
 
@@ -94,58 +93,54 @@ def get_history_file_path() -> Path:
         # Re-raise configuration errors from get_config_dir
         raise
     except Exception as e:
-        print("ERROR: Unexpected error creating history file path", file=sys.stderr)
-        print(f"Error type: {type(e).__name__}", file=sys.stderr)
-        print(f"Error message: {e}", file=sys.stderr)
-        print("Full traceback:", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+        error_print("Unexpected error creating history file path")
+        debug_print(f"Error type: {type(e).__name__}")
+        debug_print(f"Error message: {e}")
+        debug_print("Full traceback:")
+        if is_debug_enabled():
+            traceback.print_exc(file=sys.stderr)
 
         raise ConfigurationError(f"Failed to create history file path: {e}") from e
 
 
 def get_cache_dir() -> Path:
-    """Get cache directory for temporary files with debugging."""
+    """Get cache directory for temporary files with controlled debug output."""
     try:
         if xdg_cache := os.environ.get("XDG_CACHE_HOME"):
             cache_path = Path(xdg_cache) / "ifcpeek"
         else:
             cache_path = Path.home() / ".cache" / "ifcpeek"
 
-        print(f"DEBUG: Cache directory determined: {cache_path}", file=sys.stderr)
-        print(
-            f"DEBUG: XDG_CACHE_HOME: {os.environ.get('XDG_CACHE_HOME', 'Not set')}",
-            file=sys.stderr,
-        )
+        debug_print(f"Cache directory determined: {cache_path}")
+        debug_print(f"XDG_CACHE_HOME: {os.environ.get('XDG_CACHE_HOME', 'Not set')}")
 
         return cache_path
 
     except Exception as e:
-        print(
-            f"WARNING: Error determining cache directory: {type(e).__name__}: {e}",
-            file=sys.stderr,
-        )
-        print("Full traceback:", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+        warning_print(f"Error determining cache directory: {type(e).__name__}: {e}")
+        if is_debug_enabled():
+            debug_print("Full traceback:")
+            traceback.print_exc(file=sys.stderr)
 
         # Fallback to a basic path
         fallback_path = Path.home() / ".ifcpeek_cache"
-        print(f"Using fallback cache directory: {fallback_path}", file=sys.stderr)
+        verbose_print(f"Using fallback cache directory: {fallback_path}")
         return fallback_path
 
 
 def validate_ifc_file_path(file_path: str) -> Path:
-    """Validate and return Path object for IFC file with comprehensive error handling."""
+    """Validate and return Path object for IFC file with controlled debug output."""
     # Handle None input early to avoid Path() TypeError
     if file_path is None:
         raise TypeError("expected str, bytes or os.PathLike object, not NoneType")
 
     try:
-        print(f"DEBUG: Validating IFC file path: {file_path}", file=sys.stderr)
+        debug_print(f"Validating IFC file path: {file_path}")
 
         # Convert to Path object
         path = Path(file_path)
-        print(f"DEBUG: Resolved path: {path}", file=sys.stderr)
-        print(f"DEBUG: Absolute path: {path.resolve()}", file=sys.stderr)
+        debug_print(f"Resolved path: {path}")
+        debug_print(f"Absolute path: {path.resolve()}")
 
         # Check if file exists
         if not path.exists():
@@ -156,10 +151,10 @@ def validate_ifc_file_path(file_path: str) -> Path:
                 "current_dir": str(Path.cwd()),
             }
 
-            print("ERROR: File does not exist", file=sys.stderr)
-            print("DEBUG INFORMATION:", file=sys.stderr)
+            error_print("File does not exist")
+            debug_print("DEBUG INFORMATION:")
             for key, value in error_context.items():
-                print(f"  {key}: {value}", file=sys.stderr)
+                debug_print(f"  {key}: {value}")
 
             raise FileNotFoundError(
                 f"File '{file_path}' not found", file_path=file_path
@@ -175,10 +170,10 @@ def validate_ifc_file_path(file_path: str) -> Path:
                 "is_symlink": path.is_symlink(),
             }
 
-            print("ERROR: Path exists but is not a file", file=sys.stderr)
-            print("DEBUG INFORMATION:", file=sys.stderr)
+            error_print("Path exists but is not a file")
+            debug_print("DEBUG INFORMATION:")
             for key, value in error_context.items():
-                print(f"  {key}: {value}", file=sys.stderr)
+                debug_print(f"  {key}: {value}")
 
             raise InvalidIfcFileError(
                 f"'{file_path}' is not a file", file_path=file_path
@@ -189,13 +184,11 @@ def validate_ifc_file_path(file_path: str) -> Path:
             stat = path.stat()
             file_size = stat.st_size
             file_mode = oct(stat.st_mode)
-            print(f"DEBUG: File size: {file_size} bytes", file=sys.stderr)
-            print(f"DEBUG: File permissions: {file_mode}", file=sys.stderr)
-            print(f"DEBUG: File readable: {os.access(path, os.R_OK)}", file=sys.stderr)
+            debug_print(f"File size: {file_size} bytes")
+            debug_print(f"File permissions: {file_mode}")
+            debug_print(f"File readable: {os.access(path, os.R_OK)}")
         except Exception as stat_error:
-            print(
-                f"WARNING: Could not get file statistics: {stat_error}", file=sys.stderr
-            )
+            warning_print(f"Could not get file statistics: {stat_error}")
             file_size = None
 
         # Basic extension check with validation - case insensitive
@@ -208,36 +201,25 @@ def validate_ifc_file_path(file_path: str) -> Path:
                 "file_size": file_size,
             }
 
-            print("ERROR: Invalid file extension", file=sys.stderr)
-            print("DEBUG INFORMATION:", file=sys.stderr)
+            error_print("Invalid file extension")
+            debug_print("DEBUG INFORMATION:")
             for key, value in error_context.items():
-                print(f"  {key}: {value}", file=sys.stderr)
+                debug_print(f"  {key}: {value}")
 
             # Try to read first few bytes to check for IFC header
             try:
                 with open(path, "r", encoding="utf-8", errors="ignore") as f:
                     first_line = f.readline().strip()
-                    print(
-                        f"DEBUG: First line of file: {first_line[:50]}...",
-                        file=sys.stderr,
-                    )
+                    debug_print(f"First line of file: {first_line[:50]}...")
 
                     if first_line.startswith("ISO-10303-21"):
-                        print(
-                            "WARNING: File appears to be IFC format despite extension",
-                            file=sys.stderr,
-                        )
-                        print("Proceeding with validation...", file=sys.stderr)
+                        warning_print("File appears to be IFC format despite extension")
+                        verbose_print("Proceeding with validation...")
                         return path
                     else:
-                        print(
-                            "File does not appear to contain IFC data", file=sys.stderr
-                        )
+                        debug_print("File does not appear to contain IFC data")
             except Exception as read_error:
-                print(
-                    f"Could not read file for format validation: {read_error}",
-                    file=sys.stderr,
-                )
+                debug_print(f"Could not read file for format validation: {read_error}")
 
             raise InvalidIfcFileError(
                 f"'{file_path}' does not appear to be an IFC file (extension: {path.suffix})",
@@ -256,34 +238,25 @@ def validate_ifc_file_path(file_path: str) -> Path:
                     if i >= 5:  # Read first 6 lines
                         break
 
-                print("DEBUG: First few lines of file:", file=sys.stderr)
+                debug_print("First few lines of file:")
                 for i, line in enumerate(first_lines):
-                    print(f"  Line {i+1}: {line[:100]}...", file=sys.stderr)
+                    debug_print(f"  Line {i+1}: {line[:100]}...")
 
                 # Check for IFC header
                 if not first_lines or not first_lines[0].startswith("ISO-10303-21"):
-                    print(
-                        "WARNING: File does not start with standard IFC header",
-                        file=sys.stderr,
-                    )
-                    print("This might not be a valid IFC file", file=sys.stderr)
+                    warning_print("File does not start with standard IFC header")
+                    debug_print("This might not be a valid IFC file")
                 else:
-                    print("File appears to have valid IFC header", file=sys.stderr)
+                    debug_print("File appears to have valid IFC header")
 
         except UnicodeDecodeError as unicode_error:
-            print(
-                f"WARNING: Unicode decode error reading file: {unicode_error}",
-                file=sys.stderr,
-            )
-            print("File might be binary or have encoding issues", file=sys.stderr)
+            warning_print(f"Unicode decode error reading file: {unicode_error}")
+            debug_print("File might be binary or have encoding issues")
         except Exception as read_error:
-            print(
-                f"WARNING: Could not validate file content: {read_error}",
-                file=sys.stderr,
-            )
-            print("File might be locked or have permission issues", file=sys.stderr)
+            warning_print(f"Could not validate file content: {read_error}")
+            debug_print("File might be locked or have permission issues")
 
-        print(f"DEBUG: File validation successful: {path}", file=sys.stderr)
+        debug_print(f"File validation successful: {path}")
         return path
 
     except (FileNotFoundError, InvalidIfcFileError, TypeError):
@@ -297,12 +270,13 @@ def validate_ifc_file_path(file_path: str) -> Path:
             "error_message": str(e),
         }
 
-        print("ERROR: Unexpected error during file validation", file=sys.stderr)
-        print("DEBUG INFORMATION:", file=sys.stderr)
+        error_print("Unexpected error during file validation")
+        debug_print("DEBUG INFORMATION:")
         for key, value in error_context.items():
-            print(f"  {key}: {value}", file=sys.stderr)
-        print("Full traceback:", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+            debug_print(f"  {key}: {value}")
+        debug_print("Full traceback:")
+        if is_debug_enabled():
+            traceback.print_exc(file=sys.stderr)
 
         raise InvalidIfcFileError(
             f"Unexpected error validating file '{file_path}': {e}",
@@ -314,7 +288,7 @@ def validate_ifc_file_path(file_path: str) -> Path:
 def create_directory_with_error_handling(
     directory_path: Path, purpose: str = "directory"
 ) -> bool:
-    """Create directory with comprehensive error handling and debugging.
+    """Create directory with controlled debug output and error handling.
 
     Args:
         directory_path: Path to directory to create
@@ -327,18 +301,15 @@ def create_directory_with_error_handling(
         ConfigurationError: If directory cannot be created due to critical issues
     """
     try:
-        print(f"DEBUG: Creating {purpose}: {directory_path}", file=sys.stderr)
-        print(f"DEBUG: Directory exists: {directory_path.exists()}", file=sys.stderr)
+        debug_print(f"Creating {purpose}: {directory_path}")
+        debug_print(f"Directory exists: {directory_path.exists()}")
 
         if directory_path.exists():
             if directory_path.is_dir():
-                print(f"DEBUG: {purpose.capitalize()} already exists", file=sys.stderr)
+                debug_print(f"{purpose.capitalize()} already exists")
                 return True
             else:
-                print(
-                    f"ERROR: Path exists but is not a directory: {directory_path}",
-                    file=sys.stderr,
-                )
+                error_print(f"Path exists but is not a directory: {directory_path}")
                 raise ConfigurationError(
                     f"Path exists but is not a directory: {directory_path}",
                     config_path=str(directory_path),
@@ -346,7 +317,7 @@ def create_directory_with_error_handling(
 
         # Attempt to create directory
         directory_path.mkdir(parents=True, exist_ok=True)
-        print(f"DEBUG: {purpose.capitalize()} created successfully", file=sys.stderr)
+        debug_print(f"{purpose.capitalize()} created successfully")
 
         # Verify creation
         if not directory_path.exists() or not directory_path.is_dir():
@@ -369,12 +340,13 @@ def create_directory_with_error_handling(
             ),
         }
 
-        print(f"ERROR: Permission denied creating {purpose}", file=sys.stderr)
-        print("DEBUG INFORMATION:", file=sys.stderr)
+        error_print(f"Permission denied creating {purpose}")
+        debug_print("DEBUG INFORMATION:")
         for key, value in error_context.items():
-            print(f"  {key}: {value}", file=sys.stderr)
-        print("Full traceback:", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+            debug_print(f"  {key}: {value}")
+        if is_debug_enabled():
+            debug_print("Full traceback:")
+            traceback.print_exc(file=sys.stderr)
 
         raise ConfigurationError(
             f"Permission denied creating {purpose}: {directory_path}",
@@ -389,12 +361,13 @@ def create_directory_with_error_handling(
             "error_message": str(os_error),
         }
 
-        print(f"ERROR: OS error creating {purpose}", file=sys.stderr)
-        print("DEBUG INFORMATION:", file=sys.stderr)
+        error_print(f"OS error creating {purpose}")
+        debug_print("DEBUG INFORMATION:")
         for key, value in error_context.items():
-            print(f"  {key}: {value}", file=sys.stderr)
-        print("Full traceback:", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+            debug_print(f"  {key}: {value}")
+        if is_debug_enabled():
+            debug_print("Full traceback:")
+            traceback.print_exc(file=sys.stderr)
 
         # Check for common OS errors
         if "disk full" in str(os_error).lower() or "no space" in str(os_error).lower():
@@ -409,14 +382,12 @@ def create_directory_with_error_handling(
         ) from os_error
 
     except Exception as e:
-        print(
-            f"ERROR: Unexpected error creating {purpose}: {directory_path}",
-            file=sys.stderr,
-        )
-        print(f"Error type: {type(e).__name__}", file=sys.stderr)
-        print(f"Error message: {e}", file=sys.stderr)
-        print("Full traceback:", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+        error_print(f"Unexpected error creating {purpose}: {directory_path}")
+        debug_print(f"Error type: {type(e).__name__}")
+        debug_print(f"Error message: {e}")
+        if is_debug_enabled():
+            debug_print("Full traceback:")
+            traceback.print_exc(file=sys.stderr)
 
         raise ConfigurationError(
             f"Unexpected error creating {purpose}: {directory_path} - {e}",
@@ -457,12 +428,19 @@ def get_system_info() -> dict:
         return system_info
 
     except Exception as e:
-        print(f"WARNING: Could not gather system information: {e}", file=sys.stderr)
+        warning_print(f"Could not gather system information: {e}")
         return {"error": f"Could not gather system info: {e}"}
 
 
 def print_debug_info():
-    """Print comprehensive debug information for troubleshooting."""
+    """Print comprehensive debug information for troubleshooting (only if debug enabled)."""
+    if not is_debug_enabled():
+        print(
+            "Debug mode is disabled. Use --debug to enable detailed information.",
+            file=sys.stderr,
+        )
+        return
+
     print("=" * 60, file=sys.stderr)
     print("IFCPEEK CONFIGURATION DEBUG INFORMATION", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
@@ -501,8 +479,9 @@ def print_debug_info():
             print(f"History file path error: {e}", file=sys.stderr)
 
     except Exception as e:
-        print(f"ERROR: Could not print debug information: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+        error_print(f"Could not print debug information: {e}")
+        if is_debug_enabled():
+            traceback.print_exc(file=sys.stderr)
 
     print("=" * 60, file=sys.stderr)
 

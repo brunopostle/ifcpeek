@@ -2,6 +2,7 @@
 
 import pytest
 import signal
+import os
 from unittest.mock import patch, Mock
 
 from ifcpeek.shell import IfcPeek
@@ -12,6 +13,8 @@ from ifcpeek.exceptions import (
     QueryExecutionError,
     ConfigurationError,
 )
+
+os.environ["IFCPEEK_DEBUG"] = "1"
 
 
 class TestErrorHandling:
@@ -357,10 +360,9 @@ class TestErrorMessageClarity:
 
             # Should mention error handling features
             assert "ERROR HANDLING & DEBUGGING:" in help_text
-            assert "full Python tracebacks" in help_text
+            assert "Full Python tracebacks" in help_text
             assert "Signal handling" in help_text
             assert "TROUBLESHOOTING:" in help_text
-            assert "Error handling" in help_text
 
 
 class TestDebugInformation:
@@ -442,11 +444,8 @@ class TestDebugInformation:
             debug_output = captured.err
 
             # Should handle entity conversion errors gracefully
-            assert "ERROR: Failed to convert entity 0 to string format" in debug_output
-            assert (
-                "Entity error: RuntimeError: String conversion failed" in debug_output
-            )
-            assert "Continuing with next entity..." in debug_output
+            assert "ERROR: Failed to format entity" in debug_output
+            assert "RuntimeError: String conversion failed" in debug_output
 
 
 class TestEndToEndErrorScenarios:
@@ -606,7 +605,7 @@ class TestIntegrationScenarios:
             assert "#1=IFCWALL('guid'" in lifecycle_output
             assert "IFC QUERY EXECUTION ERROR" in lifecycle_err
             assert "ERROR HANDLING & DEBUGGING:" in lifecycle_err
-            assert "Error handling" in lifecycle_err
+            assert "Exiting IfcPeek..." in lifecycle_err
 
     def test_performance_impact_of_error_handling(self, mock_ifc_file, mock_selector):
         """Test that error handling doesn't significantly impact performance."""

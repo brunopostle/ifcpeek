@@ -149,7 +149,7 @@ END-ISO-10303-21;"""
 
                 # Test signal handler setup
                 with patch("signal.signal") as mock_signal:
-                    shell = IfcPeek(str(ifc_file))
+                    IfcPeek(str(ifc_file))
 
                     # Verify signal handlers were configured
                     signal_calls = mock_signal.call_args_list
