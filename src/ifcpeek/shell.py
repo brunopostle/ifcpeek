@@ -1,7 +1,5 @@
-"""Interactive shell implementation with control character fixes."""
+"""Interactive shell implementation with control character fixes and value extraction support."""
 
-import os
-import re
 import sys
 import signal
 import traceback
@@ -12,154 +10,15 @@ from prompt_toolkit.history import FileHistory
 
 from .config import validate_ifc_file_path, get_history_file_path
 from .exceptions import InvalidIfcFileError, ConfigurationError
+from .formatters import format_query_results
 
 # Dependency availability flags - always True since dependencies are required
 PROMPT_TOOLKIT_AVAILABLE = True
 IFCOPENSHELL_AVAILABLE = True
 
 
-class StepHighlighter:
-    """Syntax highlighter for STEP (SPF) format output."""
-
-    # ANSI color codes
-    COLORS = {
-        "reset": "\033[0m",
-        "entity_id": "\033[94m",  # Blue for #123
-        "entity_type": "\033[92m",  # Green for IFCWALL
-        "string": "\033[93m",  # Yellow for 'quoted strings'
-        "guid": "\033[96m",  # Cyan for GUIDs
-        "number": "\033[95m",  # Magenta for numbers
-        "operator": "\033[90m",  # Gray for = $ , ; ( )
-    }
-
-    def __init__(self):
-        self.enabled = self._should_enable_colors()
-
-    def _should_enable_colors(self) -> bool:
-        """Determine if colors should be enabled."""
-        if not sys.stdout.isatty():
-            return False
-        if "NO_COLOR" in os.environ:
-            return False
-        if "FORCE_COLOR" in os.environ:
-            return True
-        term = os.environ.get("TERM", "")
-        if term in ("dumb", ""):
-            return False
-        return True
-
-    def _colorize(self, text: str, color_key: str) -> str:
-        """Apply color to text if colors are enabled."""
-        if not self.enabled:
-            return text
-        return f"{self.COLORS[color_key]}{text}{self.COLORS['reset']}"
-
-    def highlight_step_line(self, line: str) -> str:
-        """Apply syntax highlighting to a single STEP format line."""
-        if not self.enabled or not line.strip():
-            return line
-
-        # STEP format pattern: #123=IFCWALL('guid',$,$,'name',...);
-        step_pattern = r"^(#\d+)(=)([A-Z][A-Za-z0-9_]*)\((.*)\);?\s*$"
-        match = re.match(step_pattern, line.strip())
-
-        if not match:
-            return line
-
-        entity_id, equals, entity_type, parameters = match.groups()
-
-        # Colorize components
-        colored_id = self._colorize(entity_id, "entity_id")
-        colored_equals = self._colorize(equals, "operator")
-        colored_type = self._colorize(entity_type, "entity_type")
-        colored_params = self._highlight_parameters(parameters)
-
-        result = f"{colored_id}{colored_equals}{colored_type}({colored_params});"
-
-        if line.endswith("\n"):
-            result += "\n"
-
-        return result
-
-    def _highlight_parameters(self, params: str) -> str:
-        """Highlight parameters within STEP entity definition."""
-        if not params:
-            return params
-
-        result = []
-        i = 0
-
-        while i < len(params):
-            char = params[i]
-
-            # Handle quoted strings
-            if char == "'":
-                start = i
-                i += 1
-                while i < len(params):
-                    if params[i] == "'":
-                        if i + 1 < len(params) and params[i + 1] == "'":
-                            i += 2  # Skip escaped quote
-                        else:
-                            i += 1
-                            break
-                    else:
-                        i += 1
-
-                string_content = params[start:i]
-                if self._is_guid_string(string_content):
-                    result.append(self._colorize(string_content, "guid"))
-                else:
-                    result.append(self._colorize(string_content, "string"))
-
-            # Handle numbers
-            elif char.isdigit() or (
-                char == "-" and i + 1 < len(params) and params[i + 1].isdigit()
-            ):
-                start = i
-                if char == "-":
-                    i += 1
-                while i < len(params) and (params[i].isdigit() or params[i] in ".eE+-"):
-                    i += 1
-
-                number = params[start:i]
-                result.append(self._colorize(number, "number"))
-
-            # Handle operators
-            elif char in "=$,();":
-                result.append(self._colorize(char, "operator"))
-                i += 1
-
-            # Handle entity references (#123)
-            elif char == "#":
-                start = i
-                i += 1
-                while i < len(params) and params[i].isdigit():
-                    i += 1
-                reference = params[start:i]
-                result.append(self._colorize(reference, "entity_id"))
-
-            else:
-                result.append(char)
-                i += 1
-
-        return "".join(result)
-
-    def _is_guid_string(self, string_with_quotes: str) -> bool:
-        """Check if a quoted string contains a GUID."""
-        content = string_with_quotes.strip("'")
-
-        # Common GUID patterns
-        patterns = [
-            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
-            r"^[0-9a-zA-Z_$]{22}",  # IFC compressed GUID
-        ]
-
-        return any(re.match(pattern, content) for pattern in patterns)
-
-
 class IfcPeek:
-    """Interactive IFC query shell with error handling and signal support."""
+    """Interactive IFC query shell with error handling, signal support, and value extraction."""
 
     # Built-in commands mapping (IRC-style with forward slashes)
     BUILTIN_COMMANDS = {
@@ -206,8 +65,6 @@ class IfcPeek:
             print("\nFull traceback:", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
             raise
-
-        self.step_highlighter = StepHighlighter()
 
         # Create the prompt session
         try:
@@ -610,35 +467,73 @@ class IfcPeek:
 
             return None
 
-        except Exception as e:
-            # For other errors (like non-terminal environment), fall back gracefully
+    def _parse_combined_query(self, user_input: str) -> tuple:
+        """Parse semicolon-separated query into filter and value extraction parts.
+
+        Args:
+            user_input: Raw user input string
+
+        Returns:
+            tuple: (filter_query, value_queries_list, is_combined)
+                - filter_query: The first part (filter query) or the entire input if no semicolons
+                - value_queries_list: List of value extraction queries (empty if no semicolons)
+                - is_combined: True if semicolons were found, False otherwise
+        """
+        try:
+            print(f"DEBUG: Parsing query: '{user_input}'", file=sys.stderr)
+
+            # Split on semicolons and strip whitespace from each part
+            parts = [part.strip() for part in user_input.split(";")]
+
+            print(f"DEBUG: Split into {len(parts)} parts: {parts}", file=sys.stderr)
+
+            # If only one part, it's a simple filter query (backwards compatibility)
+            if len(parts) == 1:
+                filter_query = parts[0]
+                value_queries = []
+                is_combined = False
+                print(f"DEBUG: Simple filter query: '{filter_query}'", file=sys.stderr)
+                return filter_query, value_queries, is_combined
+
+            # Multiple parts - first is filter, rest are value queries
+            filter_query = parts[0]
+            value_queries = parts[1:]
+            is_combined = True
+
+            # Validate filter query is not empty
+            if not filter_query:
+                raise ValueError("Filter query (first part before ';') cannot be empty")
+
+            # Filter out empty value queries and warn about them
+            original_value_count = len(value_queries)
+            value_queries = [vq for vq in value_queries if vq]  # Remove empty strings
+
+            if len(value_queries) != original_value_count:
+                empty_count = original_value_count - len(value_queries)
+                print(
+                    f"DEBUG: Filtered out {empty_count} empty value queries",
+                    file=sys.stderr,
+                )
+
             print(
-                f"Warning: Could not create prompt session with history: {e}",
+                f"DEBUG: Combined query - Filter: '{filter_query}', Values: {value_queries}",
                 file=sys.stderr,
             )
 
-            # Check if this is expected (non-terminal environment)
-            if "not a terminal" in str(e).lower() or "stdin" in str(e).lower():
-                print(
-                    "This is expected in non-terminal environments (like automated tests)",
-                    file=sys.stderr,
-                )
-                print(
-                    "Falling back to basic input mode (history will not be saved)",
-                    file=sys.stderr,
-                )
-            else:
-                print("Unexpected error during session creation:", file=sys.stderr)
-                traceback.print_exc(file=sys.stderr)
-                print(
-                    "Falling back to basic input mode (history will not be saved)",
-                    file=sys.stderr,
-                )
+            return filter_query, value_queries, is_combined
 
-            return None
+        except Exception as e:
+            print(
+                f"ERROR: Failed to parse combined query: '{user_input}'",
+                file=sys.stderr,
+            )
+            print(f"Error type: {type(e).__name__}: {e}", file=sys.stderr)
+            print("Full traceback:", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            raise
 
     def _process_input(self, user_input: str) -> bool:
-        """Process user input."""
+        """Process user input with support for combined queries."""
         try:
             # Strip whitespace from input
             user_input = user_input.strip()
@@ -647,16 +542,34 @@ class IfcPeek:
             if not user_input:
                 return True
 
-            # Check for built-in commands
+            # Check for built-in commands first (they take precedence)
             if user_input in self.BUILTIN_COMMANDS:
                 method_name = self.BUILTIN_COMMANDS[user_input]
                 method = getattr(self, method_name)
                 # Call command method directly - let exceptions bubble up for testing
                 return method()
 
-            # If not a built-in command, treat as IFC query
-            self._execute_query(user_input)
-            return True
+            # Parse the query to determine if it's combined or simple
+            try:
+                filter_query, value_queries, is_combined = self._parse_combined_query(
+                    user_input
+                )
+
+                # Route to appropriate execution method
+                if is_combined:
+                    print("DEBUG: Routing to combined query execution", file=sys.stderr)
+                    self._execute_combined_query(filter_query, value_queries)
+                else:
+                    print("DEBUG: Routing to simple query execution", file=sys.stderr)
+                    self._execute_query(filter_query)
+
+                return True
+
+            except ValueError as parse_error:
+                # Handle parsing errors (like empty filter query)
+                print(f"ERROR: Query parsing failed: {parse_error}", file=sys.stderr)
+                print("Please check your query syntax and try again.", file=sys.stderr)
+                return True
 
         except Exception as e:
             # For non-command input, handle errors gracefully
@@ -678,6 +591,179 @@ class IfcPeek:
                 # Re-raise command method exceptions for testing compatibility
                 raise
 
+    def _execute_combined_query(self, filter_query: str, value_queries: list) -> None:
+        """Execute combined filter and value extraction query.
+
+        Args:
+            filter_query: The filter query to find elements
+            value_queries: List of value extraction queries to apply to found elements
+        """
+        try:
+            print("DEBUG: Executing combined query", file=sys.stderr)
+            print(f"DEBUG: Filter: '{filter_query}'", file=sys.stderr)
+            print(f"DEBUG: Value queries: {value_queries}", file=sys.stderr)
+            print(
+                f"DEBUG: Model schema: {getattr(self.model, 'schema', 'Unknown')}",
+                file=sys.stderr,
+            )
+
+            # Step 1: Execute filter query to get elements
+            try:
+                results = ifcopenshell.util.selector.filter_elements(
+                    self.model, filter_query
+                )
+                print(
+                    f"DEBUG: Filter query returned {len(results)} elements",
+                    file=sys.stderr,
+                )
+            except Exception as filter_error:
+                print(f"ERROR: Filter query failed: {filter_error}", file=sys.stderr)
+                print("Full traceback for filter query:", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
+                return
+
+            # Step 2: If no elements found, output nothing (silent)
+            if not results:
+                print(
+                    "DEBUG: No elements found by filter query - no output",
+                    file=sys.stderr,
+                )
+                return
+
+            # Step 3: If no value queries, fall back to standard entity output
+            if not value_queries:
+                print(
+                    "DEBUG: No value queries provided - outputting entities",
+                    file=sys.stderr,
+                )
+                for formatted_line in format_query_results(
+                    results, enable_highlighting=True
+                ):
+                    print(formatted_line)  # STDOUT for results
+                return
+
+            # Step 4: Process value queries for each element
+            print(
+                f"DEBUG: Processing {len(value_queries)} value queries for {len(results)} elements",
+                file=sys.stderr,
+            )
+
+            for element in results:
+                try:
+                    # Extract values for this element
+                    extracted_values = []
+
+                    for value_query in value_queries:
+                        try:
+                            value = self._extract_element_value(element, value_query)
+                            extracted_values.append(value)
+                        except Exception as value_error:
+                            # Add empty string for failed extractions and log to STDERR
+                            element_id = getattr(element, "id", lambda: "Unknown")()
+                            print(
+                                f"Property '{value_query}' not found on entity #{element_id}: {value_error}",
+                                file=sys.stderr,
+                            )
+                            extracted_values.append(
+                                ""
+                            )  # Empty string for missing properties
+
+                    # Format and output results
+                    output_line = self._format_value_output(extracted_values)
+                    print(output_line)  # STDOUT for results
+
+                except Exception as element_error:
+                    # Handle errors processing individual elements
+                    element_id = getattr(element, "id", lambda: "Unknown")()
+                    print(
+                        f"ERROR: Failed to process element #{element_id}: {element_error}",
+                        file=sys.stderr,
+                    )
+                    continue
+
+        except Exception as e:
+            # Handle any other unexpected errors
+            print("=" * 60, file=sys.stderr)
+            print("COMBINED QUERY EXECUTION ERROR", file=sys.stderr)
+            print("=" * 60, file=sys.stderr)
+            print(f"Filter query: {filter_query}", file=sys.stderr)
+            print(f"Value queries: {value_queries}", file=sys.stderr)
+            print(f"Exception: {type(e).__name__}: {str(e)}", file=sys.stderr)
+            print(file=sys.stderr)
+            print("FULL PYTHON TRACEBACK:", file=sys.stderr)
+            print("-" * 40, file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            print("-" * 40, file=sys.stderr)
+            print(file=sys.stderr)
+            print(
+                "Combined query execution failed - shell will continue.",
+                file=sys.stderr,
+            )
+            print("=" * 60, file=sys.stderr)
+
+    def _extract_element_value(self, element, value_query: str) -> str:
+        """Extract a single value from an element using IfcOpenShell selector syntax.
+
+        Args:
+            element: IFC element to extract value from
+            value_query: Value extraction query (e.g., 'Name', 'type.Name', 'Pset_WallCommon.Status')
+
+        Returns:
+            Extracted value as string, or empty string if extraction fails
+        """
+        try:
+            print(
+                f"DEBUG: Extracting '{value_query}' from element #{getattr(element, 'id', lambda: 'Unknown')()}",
+                file=sys.stderr,
+            )
+
+            # Use IfcOpenShell's get_element_value function
+            value = ifcopenshell.util.selector.get_element_value(element, value_query)
+
+            # Handle different value types
+            if value is None:
+                return ""
+            elif isinstance(value, (list, tuple)):
+                # Handle lists/tuples with placeholder format
+                return f"<List[{len(value)}]>"
+            else:
+                # Convert to string representation
+                return str(value)
+
+        except Exception as e:
+            # Log detailed error to STDERR but return empty string
+            element_id = getattr(element, "id", lambda: "Unknown")()
+            print(
+                f"DEBUG: Failed to extract '{value_query}' from element #{element_id}: {type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+            return ""
+
+    def _format_value_output(self, values: list) -> str:
+        """Format extracted values for output.
+
+        Args:
+            values: List of extracted values
+
+        Returns:
+            Formatted output string
+        """
+        try:
+            if not values:
+                return ""
+            elif len(values) == 1:
+                # Single value - output value only (no tabs)
+                return str(values[0])
+            else:
+                # Multiple values - tab-separated
+                # Ensure no tabs in individual values (replace with spaces)
+                clean_values = [str(v).replace("\t", " ") for v in values]
+                return "\t".join(clean_values)
+
+        except Exception as e:
+            print(f"ERROR: Failed to format values {values}: {e}", file=sys.stderr)
+            return ""
+
     def _execute_query(self, query: str) -> None:
         """Execute IFC selector query with syntax highlighting for interactive output."""
         try:
@@ -692,32 +778,11 @@ class IfcPeek:
 
             print(f"DEBUG: Query returned {len(results)} results", file=sys.stderr)
 
-            # Display results - one entity per line in SPF format TO STDOUT
-            for i, entity in enumerate(results):
-                try:
-                    # Convert entity to SPF format (Step Physical File format)
-                    spf_line = str(entity)
-
-                    # Apply syntax highlighting if in interactive mode
-                    if self.step_highlighter.enabled:
-                        highlighted_line = self.step_highlighter.highlight_step_line(
-                            spf_line
-                        )
-                        print(highlighted_line)  # STDOUT for results
-                    else:
-                        print(spf_line)  # STDOUT for results (plain)
-
-                except Exception as entity_error:
-                    print(
-                        f"ERROR: Failed to convert entity {i} to string format",
-                        file=sys.stderr,
-                    )
-                    print(
-                        f"Entity error: {type(entity_error).__name__}: {entity_error}",
-                        file=sys.stderr,
-                    )
-                    print(f"Entity type: {type(entity)}", file=sys.stderr)
-                    print("Continuing with next entity...", file=sys.stderr)
+            # Display results using the formatter - one entity per line in SPF format TO STDOUT
+            for formatted_line in format_query_results(
+                results, enable_highlighting=True
+            ):
+                print(formatted_line)  # STDOUT for results
 
             # Empty results produce no additional output (silent)
 
@@ -813,50 +878,84 @@ IfcPeek - Interactive IFC Model Query Tool
 USAGE:
   Enter IfcOpenShell selector syntax queries to find matching entities.
   Results are displayed one entity per line in SPF (Step Physical File) format.
-  
+
+  NEW: Value Extraction Support
+  Use semicolon (;) to separate filter queries from value extraction queries:
+  filter_query ; value_query1 ; value_query2 ; ...
+
 EXAMPLES:
-  IfcWall                           - All walls
-  IfcWall, material=concrete        - Concrete walls  
-  IfcElement, Name=Door-01          - Element named Door-01
-  IfcBuildingElement, type=wall     - Building elements of type wall
-  IfcWall | IfcDoor                 - All walls or doors
-  
+  Basic Queries:
+    IfcWall                           - All walls
+    IfcWall, material=concrete        - Concrete walls
+    IfcElement, Name=Door-01          - Element named Door-01
+    IfcBuildingElement, type=wall     - Building elements of type wall
+    IfcWall | IfcDoor                 - All walls or doors
+
+  Value Extraction (NEW):
+    IfcWall ; Name                    - Wall names only
+    IfcWall ; Name ; type.Name        - Wall names and their type names
+    IfcDoor ; Name ; Pset_DoorCommon.Status ; material.Name
+                                      - Door names, status, and material
+    IfcElement, Name=Door-01 ; type.Name ; storey.Name
+                                      - Type and storey for specific element
+
+VALUE QUERY SYNTAX:
+  Name                              - Element name attribute
+  type.Name                         - Name of the element's type
+  Pset_WallCommon.FireRating        - Property from property set
+  /Pset_.*Common/.Status            - Property from any matching property set
+  material.Name                     - Material name
+  storey.Name                       - Containing storey name
+  building.Name                     - Containing building name
+
+OUTPUT FORMATS:
+  - Simple queries: SPF format (one entity per line)
+  - Single value query: value only (no tabs)
+  - Multiple value queries: tab-separated values (CSV compatible)
+  - Missing properties: empty string
+  - Lists: <List[N]> placeholder format
+
 COMMANDS:
   /help    - Show this help
   /exit    - Exit shell
   /quit    - Exit shell
   Ctrl-D   - Exit shell
   Ctrl-C   - Interrupt current operation (return to prompt)
-  
+
 HISTORY:
   Up/Down  - Navigate command history (persistent across sessions)
   Ctrl-R   - Search command history
-  
+
 QUERY RESULTS:
   - Empty queries produce no output
   - Each matching entity is displayed on a separate line
   - Entities are shown in SPF format (e.g., #123=IFCWALL('guid',...);)
   - Query errors display full traceback for debugging
-  
+
 ERROR HANDLING & DEBUGGING:
   - All errors show full Python tracebacks for debugging
   - File loading errors include detailed diagnostic information
   - Query errors provide syntax suggestions and model information
+  - Value extraction errors show per-entity error messages
   - Signal handling ensures graceful operation (Ctrl-C returns to prompt)
-  
-HISTORY FEATURES:
-  - Command history is automatically saved between sessions
-  - History includes both queries and commands
-  - Use Up/Down arrows to navigate previous commands
-  - Use Ctrl-R to search through command history
-  - History is stored in XDG-compliant location
-  
+
+CSV OUTPUT:
+  - Use value extraction with multiple queries for CSV-compatible output
+  - Results go to STDOUT (can be piped: ifcpeek model.ifc > output.csv)
+  - Errors and debug info go to STDERR (won't interfere with CSV)
+  - Tab-separated format works with most spreadsheet applications
+
+EXAMPLES FOR CSV OUTPUT:
+  IfcWall ; Name ; type.Name ; material.Name > walls.csv
+  IfcDoor ; Name ; storey.Name ; Pset_DoorCommon.Status > doors.csv
+
 TROUBLESHOOTING:
   - If queries fail, check the full traceback for specific error details
   - For file loading issues, verify file permissions and integrity
   - Use simple queries (IfcWall, IfcDoor) to test basic functionality
+  - For value extraction, ensure property names match IFC schema
   - Signal handling prevents accidental shell termination
-  
+
 For selector syntax details, see IfcOpenShell documentation.
 Error handling provides full debugging information.
 """
@@ -940,6 +1039,10 @@ Error handling provides full debugging information.
             )
             print(
                 "Signal handling configured - Ctrl-C returns to prompt, Ctrl-D exits.",
+                file=sys.stderr,
+            )
+            print(
+                "NEW: Value extraction support - use semicolons to extract specific values.",
                 file=sys.stderr,
             )
             print("Type /help for usage information, Ctrl-D to exit.", file=sys.stderr)

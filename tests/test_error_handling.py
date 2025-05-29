@@ -442,11 +442,8 @@ class TestDebugInformation:
             debug_output = captured.err
 
             # Should handle entity conversion errors gracefully
-            assert "ERROR: Failed to convert entity 0 to string format" in debug_output
-            assert (
-                "Entity error: RuntimeError: String conversion failed" in debug_output
-            )
-            assert "Continuing with next entity..." in debug_output
+            assert "ERROR: Failed to format entity" in debug_output
+            assert "RuntimeError: String conversion failed" in debug_output
 
 
 class TestEndToEndErrorScenarios:

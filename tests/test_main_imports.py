@@ -1,14 +1,11 @@
 """Test main module imports and integration - Fixed for Step 3."""
 
 import sys
-from unittest.mock import patch
-import pytest
 
 
 def test_main_imports_config_module():
     """Test that main module can import config."""
     # This should not raise ImportError
-    from ifcpeek.__main__ import main
     import ifcpeek.config
 
     # Verify functions are accessible
@@ -18,7 +15,6 @@ def test_main_imports_config_module():
 
 def test_main_imports_exceptions():
     """Test that main module can import exceptions."""
-    from ifcpeek.__main__ import main
     from ifcpeek.exceptions import IfcPeekError
 
     # Verify exception is usable

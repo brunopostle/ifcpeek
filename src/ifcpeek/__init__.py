@@ -21,6 +21,7 @@ try:
         ConfigurationError,
     )
     from .shell import IfcPeek
+    from .formatters import StepHighlighter, format_query_results
 
     __all__ = [
         "__version__",
@@ -30,6 +31,8 @@ try:
         "InvalidIfcFileError",
         "QueryExecutionError",
         "ConfigurationError",
+        "StepHighlighter",
+        "format_query_results",
     ]
 
     # features
