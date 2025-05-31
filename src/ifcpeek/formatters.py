@@ -180,27 +180,3 @@ def format_query_results(entities, enable_highlighting=True):
             )
             # Yield a fallback representation
             yield f"<Entity formatting error: {type(entity).__name__}>"
-
-
-def format_element_value(value, format_spec=None):
-    """Format an element value according to the specified format.
-
-    This function will be enhanced to support the IfcOpenShell selector
-    formatting syntax like upper(), lower(), round(), etc.
-
-    Args:
-        value: The value to format
-        format_spec: Optional formatting specification
-
-    Returns:
-        Formatted string representation of the value
-    """
-    if value is None:
-        return ""
-
-    # Basic formatting for now - will be enhanced for selector formatting syntax
-    if format_spec:
-        # Future: Parse and apply format_spec (upper, lower, round, etc.)
-        pass
-
-    return str(value)

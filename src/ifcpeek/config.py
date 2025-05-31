@@ -103,31 +103,6 @@ def get_history_file_path() -> Path:
         raise ConfigurationError(f"Failed to create history file path: {e}") from e
 
 
-def get_cache_dir() -> Path:
-    """Get cache directory for temporary files with controlled debug output."""
-    try:
-        if xdg_cache := os.environ.get("XDG_CACHE_HOME"):
-            cache_path = Path(xdg_cache) / "ifcpeek"
-        else:
-            cache_path = Path.home() / ".cache" / "ifcpeek"
-
-        debug_print(f"Cache directory determined: {cache_path}")
-        debug_print(f"XDG_CACHE_HOME: {os.environ.get('XDG_CACHE_HOME', 'Not set')}")
-
-        return cache_path
-
-    except Exception as e:
-        warning_print(f"Error determining cache directory: {type(e).__name__}: {e}")
-        if is_debug_enabled():
-            debug_print("Full traceback:")
-            traceback.print_exc(file=sys.stderr)
-
-        # Fallback to a basic path
-        fallback_path = Path.home() / ".ifcpeek_cache"
-        verbose_print(f"Using fallback cache directory: {fallback_path}")
-        return fallback_path
-
-
 def validate_ifc_file_path(file_path: str) -> Path:
     """Validate and return Path object for IFC file with controlled debug output."""
     # Handle None input early to avoid Path() TypeError
@@ -285,155 +260,8 @@ def validate_ifc_file_path(file_path: str) -> Path:
         ) from e
 
 
-def create_directory_with_error_handling(
-    directory_path: Path, purpose: str = "directory"
-) -> bool:
-    """Create directory with controlled debug output and error handling.
-
-    Args:
-        directory_path: Path to directory to create
-        purpose: Description of directory purpose for error messages
-
-    Returns:
-        True if directory was created or already exists, False otherwise
-
-    Raises:
-        ConfigurationError: If directory cannot be created due to critical issues
-    """
-    try:
-        debug_print(f"Creating {purpose}: {directory_path}")
-        debug_print(f"Directory exists: {directory_path.exists()}")
-
-        if directory_path.exists():
-            if directory_path.is_dir():
-                debug_print(f"{purpose.capitalize()} already exists")
-                return True
-            else:
-                error_print(f"Path exists but is not a directory: {directory_path}")
-                raise ConfigurationError(
-                    f"Path exists but is not a directory: {directory_path}",
-                    config_path=str(directory_path),
-                )
-
-        # Attempt to create directory
-        directory_path.mkdir(parents=True, exist_ok=True)
-        debug_print(f"{purpose.capitalize()} created successfully")
-
-        # Verify creation
-        if not directory_path.exists() or not directory_path.is_dir():
-            raise ConfigurationError(
-                f"Directory creation appeared to succeed but directory does not exist: {directory_path}",
-                config_path=str(directory_path),
-            )
-
-        return True
-
-    except PermissionError as perm_error:
-        error_context = {
-            "directory_path": str(directory_path),
-            "parent_path": str(directory_path.parent),
-            "parent_exists": directory_path.parent.exists(),
-            "parent_writable": (
-                os.access(directory_path.parent, os.W_OK)
-                if directory_path.parent.exists()
-                else False
-            ),
-        }
-
-        error_print(f"Permission denied creating {purpose}")
-        debug_print("DEBUG INFORMATION:")
-        for key, value in error_context.items():
-            debug_print(f"  {key}: {value}")
-        if is_debug_enabled():
-            debug_print("Full traceback:")
-            traceback.print_exc(file=sys.stderr)
-
-        raise ConfigurationError(
-            f"Permission denied creating {purpose}: {directory_path}",
-            config_path=str(directory_path),
-            system_info=error_context,
-        ) from perm_error
-
-    except OSError as os_error:
-        error_context = {
-            "directory_path": str(directory_path),
-            "error_code": getattr(os_error, "errno", "Unknown"),
-            "error_message": str(os_error),
-        }
-
-        error_print(f"OS error creating {purpose}")
-        debug_print("DEBUG INFORMATION:")
-        for key, value in error_context.items():
-            debug_print(f"  {key}: {value}")
-        if is_debug_enabled():
-            debug_print("Full traceback:")
-            traceback.print_exc(file=sys.stderr)
-
-        # Check for common OS errors
-        if "disk full" in str(os_error).lower() or "no space" in str(os_error).lower():
-            error_context["suggestion"] = "Free up disk space and try again"
-        elif "read-only" in str(os_error).lower():
-            error_context["suggestion"] = "Check if filesystem is mounted read-only"
-
-        raise ConfigurationError(
-            f"OS error creating {purpose}: {directory_path} - {os_error}",
-            config_path=str(directory_path),
-            system_info=error_context,
-        ) from os_error
-
-    except Exception as e:
-        error_print(f"Unexpected error creating {purpose}: {directory_path}")
-        debug_print(f"Error type: {type(e).__name__}")
-        debug_print(f"Error message: {e}")
-        if is_debug_enabled():
-            debug_print("Full traceback:")
-            traceback.print_exc(file=sys.stderr)
-
-        raise ConfigurationError(
-            f"Unexpected error creating {purpose}: {directory_path} - {e}",
-            config_path=str(directory_path),
-        ) from e
-
-
-def get_system_info() -> dict:
-    """Get system information for debugging purposes.
-
-    Returns:
-        Dictionary containing system information
-    """
-    try:
-        import platform
-        import sys
-
-        system_info = {
-            "platform": platform.platform(),
-            "system": platform.system(),
-            "machine": platform.machine(),
-            "python_version": sys.version,
-            "python_executable": sys.executable,
-            "current_working_directory": str(Path.cwd()),
-            "home_directory": str(Path.home()),
-            "environment_variables": {
-                "HOME": os.environ.get("HOME", "Not set"),
-                "XDG_STATE_HOME": os.environ.get("XDG_STATE_HOME", "Not set"),
-                "XDG_CACHE_HOME": os.environ.get("XDG_CACHE_HOME", "Not set"),
-                "PATH": (
-                    os.environ.get("PATH", "Not set")[:200] + "..."
-                    if len(os.environ.get("PATH", "")) > 200
-                    else os.environ.get("PATH", "Not set")
-                ),
-            },
-        }
-
-        return system_info
-
-    except Exception as e:
-        warning_print(f"Could not gather system information: {e}")
-        return {"error": f"Could not gather system info: {e}"}
-
-
 def print_debug_info():
-    """Print comprehensive debug information for troubleshooting (only if debug enabled)."""
+    """Print basic debug information for troubleshooting (only if debug enabled)."""
     if not is_debug_enabled():
         print(
             "Debug mode is disabled. Use --debug to enable detailed information.",
@@ -446,15 +274,12 @@ def print_debug_info():
     print("=" * 60, file=sys.stderr)
 
     try:
-        system_info = get_system_info()
+        import platform
 
-        for key, value in system_info.items():
-            if isinstance(value, dict):
-                print(f"{key.upper()}:", file=sys.stderr)
-                for sub_key, sub_value in value.items():
-                    print(f"  {sub_key}: {sub_value}", file=sys.stderr)
-            else:
-                print(f"{key}: {value}", file=sys.stderr)
+        print(f"Platform: {platform.platform()}", file=sys.stderr)
+        print(f"Python version: {sys.version}", file=sys.stderr)
+        print(f"Current directory: {Path.cwd()}", file=sys.stderr)
+        print(f"Home directory: {Path.home()}", file=sys.stderr)
 
         print("\nCONFIGURATION PATHS:", file=sys.stderr)
         try:
@@ -463,13 +288,6 @@ def print_debug_info():
             print(f"Config dir exists: {config_dir.exists()}", file=sys.stderr)
         except Exception as e:
             print(f"Config directory error: {e}", file=sys.stderr)
-
-        try:
-            cache_dir = get_cache_dir()
-            print(f"Cache directory: {cache_dir}", file=sys.stderr)
-            print(f"Cache dir exists: {cache_dir.exists()}", file=sys.stderr)
-        except Exception as e:
-            print(f"Cache directory error: {e}", file=sys.stderr)
 
         try:
             history_path = get_history_file_path()

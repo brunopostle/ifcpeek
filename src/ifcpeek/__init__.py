@@ -43,8 +43,6 @@ try:
         "Intelligent error recovery",
         "Context-rich exception classes",
         "File validation",
-        "Memory usage optimization",
-        "Performance monitoring",
         "Proper STDOUT/STDERR separation",
         "Configurable debug output",
     ]

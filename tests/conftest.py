@@ -89,7 +89,9 @@ def mock_selector():
     This fixture is CRITICAL for Step 7+ tests - it mocks the real IFC selector
     to avoid syntax errors when testing with invalid IFC queries.
     """
-    with patch("ifcopenshell.util.selector.filter_elements") as mock_filter:
+    with patch(
+        "ifcpeek.shell.ifcopenshell.util.selector.filter_elements"
+    ) as mock_filter:
         # Default behavior: return empty results for any query
         mock_filter.return_value = []
         yield mock_filter
