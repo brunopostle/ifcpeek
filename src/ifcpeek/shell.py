@@ -1,4 +1,7 @@
-"""Interactive shell implementation with enhanced tab completion, value extraction support, and controlled debug output."""
+"""
+Updated shell.py with enhanced tab completion for both filter queries and value extraction.
+Replace the existing shell.py with this enhanced version.
+"""
 
 import sys
 import signal
@@ -22,7 +25,7 @@ from .debug import (
 
 
 class IfcPeek:
-    """Interactive IFC query shell with enhanced tab completion and value extraction."""
+    """Interactive IFC query shell with enhanced tab completion for both filter and value queries."""
 
     BUILTIN_COMMANDS = {
         "/help": "_show_help",
@@ -30,6 +33,7 @@ class IfcPeek:
         "/quit": "_exit",
         "/debug": "_toggle_debug",
         "/completion": "_show_completion_debug",
+        "/test": "_test_completion",
     }
 
     def __init__(
@@ -62,9 +66,9 @@ class IfcPeek:
                 traceback.print_exc(file=sys.stderr)
             raise
 
-        # Build dynamic completion system
+        # Build enhanced completion system
         try:
-            print("Building dynamic completion system...", file=sys.stderr)
+            print("Building enhanced completion system...", file=sys.stderr)
             from .dynamic_completion import create_dynamic_completion_system
 
             self.completion_cache, self.completer = create_dynamic_completion_system(
@@ -74,13 +78,14 @@ class IfcPeek:
             # Print summary of what was cached
             debug_info = self.completer.get_debug_info()
             print(
-                f"Dynamic completion ready: {debug_info['total_classes']} classes, "
+                f"Enhanced completion ready: {debug_info['total_classes']} classes, "
+                f"{debug_info['cached_attributes']} classes with attributes, "
                 f"{debug_info['property_sets']} property sets",
                 file=sys.stderr,
             )
 
         except Exception as e:
-            warning_print(f"Failed to build dynamic completion system: {e}")
+            warning_print(f"Failed to build enhanced completion system: {e}")
             if is_debug_enabled():
                 traceback.print_exc(file=sys.stderr)
             self.completion_cache = None
@@ -259,27 +264,34 @@ IfcPeek - Interactive IFC Model Query Tool
 USAGE:
   Enter IfcOpenShell selector syntax queries to find matching entities.
 
-BASIC QUERIES:
+BASIC QUERIES with TAB COMPLETION:
+  IfcW<TAB>                         - Complete to IfcWall, IfcWindow, etc.
+  IfcWall<TAB>                      - Shows: comma, attributes (Name, etc.), keywords (material, etc.)
+  IfcWall, <TAB>                    - Shows: IFC classes, attributes, filter keywords
+  IfcWall, Name<TAB>                - Shows: comparison operators (=, !=, etc.)
+  IfcWall, Pset_<TAB>               - Shows: available property sets
+  IfcWall, Pset_WallCommon.<TAB>    - Shows: properties in that property set
+
+EXAMPLE FILTER QUERIES:
   IfcWall                           - All walls
   IfcWall, material=concrete        - Concrete walls  
   IfcElement, Name=Door-01          - Element named Door-01
+  IfcWall, Pset_WallCommon.FireRating=2HR - 2-hour fire rated walls
 
-VALUE EXTRACTION:
+VALUE EXTRACTION with TAB COMPLETION:
+  IfcWall ; <TAB>                   - Shows wall-specific attributes + common properties
   IfcWall ; Name                    - Wall names
   IfcWall ; Name ; type.Name        - Wall names and type names
-  IfcWall ; Pset_WallCommon.FireRating - Fire ratings
-
-ENHANCED TAB COMPLETION:
-  Context-aware completions based on your filter query:
-  
-  IfcWall ; <TAB>                   - Shows wall-specific attributes + common properties
-  IfcDoor ; <TAB>                   - Shows door-specific attributes (OverallHeight, etc.)
   IfcWall ; type.<TAB>              - Shows type attributes  
-  IfcWall ; Pset_WallCommon.<TAB>   - Shows properties in that property set
   IfcWall ; material.<TAB>          - Shows material attributes (Name, Category, item)
-  
-  The completion system analyzes your filter query (the part before the first ';')
-  and suggests attributes relevant to those specific IFC classes.
+  IfcWall ; Pset_WallCommon.<TAB>   - Shows properties in that property set
+
+SMART TAB COMPLETION FEATURES:
+  - Class completion: IfcW<TAB> → IfcWall, IfcWindow, IfcWallStandardCase
+  - Context-aware attributes: Different completions for IfcWall vs IfcDoor
+  - Property set completion: Pset_<TAB> → actual property sets in your model
+  - Filter keyword completion: Shows material, type, location, etc.
+  - Value path completion: Analyzes filter query to suggest relevant attributes
 
 FORMATTING FUNCTIONS:
   IfcWall ; upper(Name)             - Wall names in uppercase
@@ -292,6 +304,7 @@ COMMANDS:
   /quit       - Exit shell
   /debug      - Toggle debug mode
   /completion - Show completion system debug info
+  /test       - Test completion for a specific query
   Ctrl-D      - Exit shell
 
 HISTORY:
@@ -329,7 +342,7 @@ For complete selector syntax details, see IfcOpenShell documentation.
         debug_info = self.completer.get_debug_info()
 
         print("=" * 60, file=sys.stderr)
-        print("COMPLETION SYSTEM DEBUG INFORMATION", file=sys.stderr)
+        print("ENHANCED COMPLETION SYSTEM DEBUG INFORMATION", file=sys.stderr)
         print("=" * 60, file=sys.stderr)
         print(
             f"Total IFC classes in model: {debug_info['total_classes']}",
@@ -341,10 +354,12 @@ For complete selector syntax details, see IfcOpenShell documentation.
         )
         print(f"Property sets found: {debug_info['property_sets']}", file=sys.stderr)
         print(f"Selector keywords: {debug_info['selector_keywords']}", file=sys.stderr)
+        print(f"Filter keywords: {debug_info['filter_keywords']}", file=sys.stderr)
+        print(f"Common attributes: {debug_info['common_attributes']}", file=sys.stderr)
 
         print("\nSample IFC classes:", file=sys.stderr)
         for cls in debug_info["sample_classes"]:
-            attr_count = len(self.completion_cache.ifc_attributes.get(cls, set()))
+            attr_count = len(self.completion_cache.attribute_cache.get(cls, set()))
             print(f"  {cls}: {attr_count} attributes", file=sys.stderr)
 
         print("\nSample property sets:", file=sys.stderr)
@@ -356,7 +371,7 @@ For complete selector syntax details, see IfcOpenShell documentation.
         print("\nSample attributes for first 3 classes:", file=sys.stderr)
         sample_classes = list(self.completion_cache.ifc_classes_in_model)[:3]
         for cls in sample_classes:
-            attrs = self.completion_cache.ifc_attributes.get(cls, set())
+            attrs = self.completion_cache.attribute_cache.get(cls, set())
             sample_attrs = sorted(list(attrs)[:8])  # Show first 8 attributes
             if len(attrs) > 8:
                 sample_attrs.append(f"... and {len(attrs) - 8} more")
@@ -365,50 +380,129 @@ For complete selector syntax details, see IfcOpenShell documentation.
         print("=" * 60, file=sys.stderr)
         return True
 
-    def test_completion_for_query(self, filter_query: str) -> None:
-        """Test what completions would be available for a given filter query."""
+    def _test_completion(self) -> bool:
+        """Interactive completion testing command."""
+        if not self.completion_cache:
+            print("Completion system not available.", file=sys.stderr)
+            return True
+
+        print(
+            "Enter a partial query to test completions (or empty line to cancel):",
+            file=sys.stderr,
+        )
+        try:
+            test_query = input("Test query: ")
+            if not test_query.strip():
+                print("Test cancelled.", file=sys.stderr)
+                return True
+
+            self.test_completion_for_query(test_query.strip())
+        except (KeyboardInterrupt, EOFError):
+            print("\nTest cancelled.", file=sys.stderr)
+
+        return True
+
+    def test_completion_for_query(self, query: str) -> None:
+        """Test what completions would be available for a given query."""
         if not self.completion_cache:
             print("Completion system not available.", file=sys.stderr)
             return
 
-        print(f"Testing completions for filter: '{filter_query}'", file=sys.stderr)
+        print(f"\nTesting completions for: '{query}'", file=sys.stderr)
+        print("=" * 50, file=sys.stderr)
 
-        # Extract classes from the query
-        relevant_classes = self.completion_cache.extract_ifc_classes_from_query(
-            filter_query
-        )
-        print(
-            f"Detected classes: {', '.join(sorted(relevant_classes))}", file=sys.stderr
-        )
+        # Determine if this is a filter query or value extraction
+        if ";" in query:
+            # Value extraction context
+            parts = query.split(";")
+            filter_part = parts[0].strip()
+            value_part = parts[-1].strip() if len(parts) > 1 else ""
 
-        # Get context-aware completions
-        context_attributes = self.completion_cache.get_attributes_for_classes(
-            relevant_classes
-        )
-        sample_attrs = sorted(list(context_attributes)[:15])  # Show first 15
-        if len(context_attributes) > 15:
-            sample_attrs.append(f"... and {len(context_attributes) - 15} more")
-        print(f"Available attributes: {', '.join(sample_attrs)}", file=sys.stderr)
+            print("Context: Value extraction query", file=sys.stderr)
+            print(f"Filter part: '{filter_part}'", file=sys.stderr)
+            print(f"Value part: '{value_part}'", file=sys.stderr)
 
-        # Show property sets
-        sample_psets = sorted(
-            list(self.completion_cache.property_sets)[:10]
-        )  # Show first 10
-        if len(self.completion_cache.property_sets) > 10:
-            sample_psets.append(
-                f"... and {len(self.completion_cache.property_sets) - 10} more"
+            # Extract classes from filter
+            relevant_classes = self.completion_cache.extract_ifc_classes_from_query(
+                filter_part
             )
-        print(f"Available property sets: {', '.join(sample_psets)}", file=sys.stderr)
+            print(
+                f"Detected classes: {', '.join(sorted(relevant_classes)) if relevant_classes else 'All classes'}",
+                file=sys.stderr,
+            )
+
+            # Test value extraction completion
+            try:
+                from .dynamic_completion import DynamicContextResolver
+
+                resolver = DynamicContextResolver(self.completion_cache)
+                completions = resolver.get_completions_for_path(filter_part, value_part)
+
+                print(f"\nAvailable completions ({len(completions)}):", file=sys.stderr)
+                sorted_completions = sorted(list(completions))
+                for i, completion in enumerate(
+                    sorted_completions[:20]
+                ):  # Show first 20
+                    print(f"  {completion}", file=sys.stderr)
+                if len(sorted_completions) > 20:
+                    print(
+                        f"  ... and {len(sorted_completions) - 20} more",
+                        file=sys.stderr,
+                    )
+
+            except Exception as e:
+                print(f"Error getting value completions: {e}", file=sys.stderr)
+
+        else:
+            # Filter query context
+            print("Context: Filter query", file=sys.stderr)
+
+            # Extract classes from the query
+            relevant_classes = self.completion_cache.extract_ifc_classes_from_query(
+                query
+            )
+            print(
+                f"Detected classes: {', '.join(sorted(relevant_classes)) if relevant_classes else 'None detected'}",
+                file=sys.stderr,
+            )
+
+            # Analyze filter context
+            from .enhanced_completion import FilterQueryCompleter
+
+            filter_completer = FilterQueryCompleter(self.completion_cache)
+            context = filter_completer._analyze_filter_context(query)
+
+            print("\nFilter context analysis:", file=sys.stderr)
+            for key, value in context.items():
+                if value and key != "current_pset" and key != "current_attribute":
+                    print(f"  {key}: {value}", file=sys.stderr)
+                elif key in ("current_pset", "current_attribute") and value:
+                    print(f"  {key}: {value}", file=sys.stderr)
+
+            # Get contextual completions
+            completions = filter_completer._get_contextual_completions(query, "")
+
+            print(
+                f"\nAvailable filter completions ({len(completions)}):", file=sys.stderr
+            )
+            sorted_completions = sorted(list(completions))
+            for i, completion in enumerate(sorted_completions[:20]):  # Show first 20
+                print(f"  {completion}", file=sys.stderr)
+            if len(sorted_completions) > 20:
+                print(f"  ... and {len(sorted_completions) - 20} more", file=sys.stderr)
+
+        print("=" * 50, file=sys.stderr)
 
     def run(self) -> None:
         """Main shell loop."""
         try:
             verbose_print("IfcPeek starting")
             if self.session and self.completer:
+                verbose_print("Enhanced tab completion enabled")
                 verbose_print(
-                    "Enhanced tab completion enabled - use TAB after semicolons"
+                    "- Filter queries: TAB for IFC classes, attributes, keywords"
                 )
-                verbose_print("Context-aware completions based on your filter queries")
+                verbose_print("- Value extraction: TAB for context-aware properties")
             verbose_print("Type /help for usage information")
 
             while True:
