@@ -1,5 +1,6 @@
 """Value extraction functionality for IfcPeek."""
 
+import sys
 import ifcopenshell.util.selector
 from .debug import debug_print, error_print, is_debug_enabled
 
@@ -472,7 +473,3 @@ class ValueExtractor:
             First inner value query (e.g., 'type.Name')
         """
         return self.extract_first_value_query(format_query)
-
-
-# Add missing import for sys
-import sys

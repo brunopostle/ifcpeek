@@ -3,13 +3,14 @@ IfcPeek - Interactive command-line shell for querying IFC models.
 
 IfcPeek provides a Unix shell-like interface for exploring and filtering
 IFC entities using IfcOpenShell's selector syntax, with professional-grade
-error handling, full Python tracebacks, and signal management.
+error handling, full Python tracebacks, signal management, and tab completion.
 """
 
 __version__ = "1.0.0"
 __author__ = "Bruno Postle"
 __email__ = "bruno@postle.net"
 __license__ = "GPLv3"
+
 
 # Import main classes for convenience
 try:
@@ -26,6 +27,8 @@ try:
     __all__ = [
         "__version__",
         "IfcPeek",
+        "IfcCompletionCache",
+        "IfcValueCompleter",
         "IfcPeekError",
         "FileNotFoundError",
         "InvalidIfcFileError",
@@ -45,6 +48,10 @@ try:
         "File validation",
         "Proper STDOUT/STDERR separation",
         "Configurable debug output",
+        "Tab completion for value extraction queries",
+        "Model-aware property set suggestions",
+        "Context-sensitive attribute completions",
+        "Partial matching support",
     ]
 
     def print_features():
@@ -101,7 +108,7 @@ def get_package_info():
         }
 
         # Check which modules are available
-        modules_to_check = ["shell", "exceptions", "config", "__main__"]
+        modules_to_check = ["shell", "exceptions", "config", "__main__", "completion"]
 
         for module_name in modules_to_check:
             try:

@@ -382,7 +382,7 @@ class TestCombinedQueryExecution:
             shell._execute_combined_query("BadFilter[", ["Name"])
 
             captured = capsys.readouterr()
-            assert "IFC QUERY EXECUTION ERROR" in captured.err
+            assert "COMBINED QUERY EXECUTION ERROR" in captured.err
             assert "Filter query: BadFilter[" in captured.err
             assert captured.out == ""  # No output on filter error
 

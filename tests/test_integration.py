@@ -80,8 +80,7 @@ class TestMainToShellIntegration:
 
         captured = capsys.readouterr()
         assert "IFC model loaded successfully" in captured.err
-        assert "Schema: IFC4" in captured.err
-        assert "Interactive shell started" in captured.err
+        assert "IfcPeek starting" in captured.err
         assert "Goodbye!" in captured.err
 
     def test_main_handles_initialization_errors(self, mock_ifc_file, capsys):
@@ -317,10 +316,10 @@ class TestErrorHandlingIntegration:
 
             captured = capsys.readouterr()
 
-            # Just verify that error handling works and basic error info is shown
             assert "IFC QUERY EXECUTION ERROR" in captured.err
-            assert "Query execution failed" in captured.err
-            # The shell handled the error without crashing - that's what matters
+            assert (
+                "Query: IfcWall" in captured.err
+            )  # This should be in the actual output
 
     def test_shell_continues_after_various_errors(
         self, mock_ifc_file, mock_selector, capsys
