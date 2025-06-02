@@ -209,24 +209,45 @@ class TestHistoryIntegration:
     def test_shell_works_when_completion_cache_fails(self, mock_ifc_file, capsys):
         """Test that shell works even when completion cache building fails."""
         with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
-            # Use a basic mock that will cause completion cache to fail
             mock_model = Mock()
-            # Set schema as a string to avoid issues elsewhere
             mock_model.schema = "IFC4"
-            # Don't make it iterable - this will cause IfcCompletionCache to fail
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            # Clear any previous captured output from initialization
+            capsys.readouterr()
 
-            # Completion cache should be None due to failure
-            assert shell.completion_cache is None
-            assert shell.completer is None
+            # The most reliable way to make the completion system fail is to patch
+            # the create_dynamic_completion_system function itself
+            original_create_fn = None
+            try:
+                # Import and patch the function
+                import ifcpeek.dynamic_completion as dc_module
 
-            # But shell should still work
-            assert shell._process_input("/help") is True
+                original_create_fn = dc_module.create_dynamic_completion_system
 
-            captured = capsys.readouterr()
-            assert "Failed to build dynamic completion system" in captured.err
+                def failing_create_system(model):
+                    raise Exception("Completion system creation failed")
+
+                dc_module.create_dynamic_completion_system = failing_create_system
+
+                # Now create the shell - this should trigger the completion cache failure
+                shell = IfcPeek(str(mock_ifc_file))
+
+                # Verify that completion cache failed to build
+                assert shell.completion_cache is None
+                assert shell.completer is None
+
+                # But shell should still work for basic operations
+                assert shell._process_input("/help") is True
+
+                # Verify the error message was logged
+                captured = capsys.readouterr()
+                assert "Failed to build enhanced completion system" in captured.err
+
+            finally:
+                # Restore the original function
+                if original_create_fn:
+                    dc_module.create_dynamic_completion_system = original_create_fn
 
     def test_run_method_handles_no_session(self, mock_ifc_file, capsys):
         """Test that run method handles cases where session is None."""

@@ -1,6 +1,6 @@
 """
 Updated shell.py with enhanced tab completion for both filter queries and value extraction.
-Replace the existing shell.py with this enhanced version.
+Debug commands and excessive debug output removed for cleaner operation.
 """
 
 import sys
@@ -32,8 +32,6 @@ class IfcPeek:
         "/exit": "_exit",
         "/quit": "_exit",
         "/debug": "_toggle_debug",
-        "/completion": "_show_completion_debug",
-        "/test": "_test_completion",
     }
 
     def __init__(
@@ -68,7 +66,7 @@ class IfcPeek:
 
         # Build enhanced completion system
         try:
-            print("Building enhanced completion system...", file=sys.stderr)
+            debug_print("Building enhanced completion system...")
             from .dynamic_completion import create_dynamic_completion_system
 
             self.completion_cache, self.completer = create_dynamic_completion_system(
@@ -77,11 +75,10 @@ class IfcPeek:
 
             # Print summary of what was cached
             debug_info = self.completer.get_debug_info()
-            print(
+            debug_print(
                 f"Enhanced completion ready: {debug_info['total_classes']} classes, "
                 f"{debug_info['cached_attributes']} classes with attributes, "
-                f"{debug_info['property_sets']} property sets",
-                file=sys.stderr,
+                f"{debug_info['property_sets']} property sets"
             )
 
         except Exception as e:
@@ -303,8 +300,6 @@ COMMANDS:
   /exit       - Exit shell  
   /quit       - Exit shell
   /debug      - Toggle debug mode
-  /completion - Show completion system debug info
-  /test       - Test completion for a specific query
   Ctrl-D      - Exit shell
 
 HISTORY:
@@ -332,166 +327,6 @@ For complete selector syntax details, see IfcOpenShell documentation.
             enable_debug()
             print("Debug mode enabled.", file=sys.stderr)
         return True
-
-    def _show_completion_debug(self) -> bool:
-        """Show debug information about the completion system."""
-        if not self.completer or not self.completion_cache:
-            print("Completion system not available.", file=sys.stderr)
-            return True
-
-        debug_info = self.completer.get_debug_info()
-
-        print("=" * 60, file=sys.stderr)
-        print("ENHANCED COMPLETION SYSTEM DEBUG INFORMATION", file=sys.stderr)
-        print("=" * 60, file=sys.stderr)
-        print(
-            f"Total IFC classes in model: {debug_info['total_classes']}",
-            file=sys.stderr,
-        )
-        print(
-            f"Classes with cached attributes: {debug_info['cached_attributes']}",
-            file=sys.stderr,
-        )
-        print(f"Property sets found: {debug_info['property_sets']}", file=sys.stderr)
-        print(f"Selector keywords: {debug_info['selector_keywords']}", file=sys.stderr)
-        print(f"Filter keywords: {debug_info['filter_keywords']}", file=sys.stderr)
-        print(f"Common attributes: {debug_info['common_attributes']}", file=sys.stderr)
-
-        print("\nSample IFC classes:", file=sys.stderr)
-        for cls in debug_info["sample_classes"]:
-            attr_count = len(self.completion_cache.attribute_cache.get(cls, set()))
-            print(f"  {cls}: {attr_count} attributes", file=sys.stderr)
-
-        print("\nSample property sets:", file=sys.stderr)
-        for pset in debug_info["sample_property_sets"]:
-            prop_count = len(self.completion_cache.properties_by_pset.get(pset, set()))
-            print(f"  {pset}: {prop_count} properties", file=sys.stderr)
-
-        # Show some sample attributes for the first few classes
-        print("\nSample attributes for first 3 classes:", file=sys.stderr)
-        sample_classes = list(self.completion_cache.ifc_classes_in_model)[:3]
-        for cls in sample_classes:
-            attrs = self.completion_cache.attribute_cache.get(cls, set())
-            sample_attrs = sorted(list(attrs)[:8])  # Show first 8 attributes
-            if len(attrs) > 8:
-                sample_attrs.append(f"... and {len(attrs) - 8} more")
-            print(f"  {cls}: {', '.join(sample_attrs)}", file=sys.stderr)
-
-        print("=" * 60, file=sys.stderr)
-        return True
-
-    def _test_completion(self) -> bool:
-        """Interactive completion testing command."""
-        if not self.completion_cache:
-            print("Completion system not available.", file=sys.stderr)
-            return True
-
-        print(
-            "Enter a partial query to test completions (or empty line to cancel):",
-            file=sys.stderr,
-        )
-        try:
-            test_query = input("Test query: ")
-            if not test_query.strip():
-                print("Test cancelled.", file=sys.stderr)
-                return True
-
-            self.test_completion_for_query(test_query.strip())
-        except (KeyboardInterrupt, EOFError):
-            print("\nTest cancelled.", file=sys.stderr)
-
-        return True
-
-    def test_completion_for_query(self, query: str) -> None:
-        """Test what completions would be available for a given query."""
-        if not self.completion_cache:
-            print("Completion system not available.", file=sys.stderr)
-            return
-
-        print(f"\nTesting completions for: '{query}'", file=sys.stderr)
-        print("=" * 50, file=sys.stderr)
-
-        # Determine if this is a filter query or value extraction
-        if ";" in query:
-            # Value extraction context
-            parts = query.split(";")
-            filter_part = parts[0].strip()
-            value_part = parts[-1].strip() if len(parts) > 1 else ""
-
-            print("Context: Value extraction query", file=sys.stderr)
-            print(f"Filter part: '{filter_part}'", file=sys.stderr)
-            print(f"Value part: '{value_part}'", file=sys.stderr)
-
-            # Extract classes from filter
-            relevant_classes = self.completion_cache.extract_ifc_classes_from_query(
-                filter_part
-            )
-            print(
-                f"Detected classes: {', '.join(sorted(relevant_classes)) if relevant_classes else 'All classes'}",
-                file=sys.stderr,
-            )
-
-            # Test value extraction completion
-            try:
-                from .dynamic_completion import DynamicContextResolver
-
-                resolver = DynamicContextResolver(self.completion_cache)
-                completions = resolver.get_completions_for_path(filter_part, value_part)
-
-                print(f"\nAvailable completions ({len(completions)}):", file=sys.stderr)
-                sorted_completions = sorted(list(completions))
-                for i, completion in enumerate(
-                    sorted_completions[:20]
-                ):  # Show first 20
-                    print(f"  {completion}", file=sys.stderr)
-                if len(sorted_completions) > 20:
-                    print(
-                        f"  ... and {len(sorted_completions) - 20} more",
-                        file=sys.stderr,
-                    )
-
-            except Exception as e:
-                print(f"Error getting value completions: {e}", file=sys.stderr)
-
-        else:
-            # Filter query context
-            print("Context: Filter query", file=sys.stderr)
-
-            # Extract classes from the query
-            relevant_classes = self.completion_cache.extract_ifc_classes_from_query(
-                query
-            )
-            print(
-                f"Detected classes: {', '.join(sorted(relevant_classes)) if relevant_classes else 'None detected'}",
-                file=sys.stderr,
-            )
-
-            # Analyze filter context
-            from .enhanced_completion import FilterQueryCompleter
-
-            filter_completer = FilterQueryCompleter(self.completion_cache)
-            context = filter_completer._analyze_filter_context(query)
-
-            print("\nFilter context analysis:", file=sys.stderr)
-            for key, value in context.items():
-                if value and key != "current_pset" and key != "current_attribute":
-                    print(f"  {key}: {value}", file=sys.stderr)
-                elif key in ("current_pset", "current_attribute") and value:
-                    print(f"  {key}: {value}", file=sys.stderr)
-
-            # Get contextual completions
-            completions = filter_completer._get_contextual_completions(query, "")
-
-            print(
-                f"\nAvailable filter completions ({len(completions)}):", file=sys.stderr
-            )
-            sorted_completions = sorted(list(completions))
-            for i, completion in enumerate(sorted_completions[:20]):  # Show first 20
-                print(f"  {completion}", file=sys.stderr)
-            if len(sorted_completions) > 20:
-                print(f"  ... and {len(sorted_completions) - 20} more", file=sys.stderr)
-
-        print("=" * 50, file=sys.stderr)
 
     def run(self) -> None:
         """Main shell loop."""

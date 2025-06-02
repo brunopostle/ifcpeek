@@ -1,6 +1,7 @@
-"""Value extraction functionality for IfcPeek."""
+"""Fixed value extraction functionality for IfcPeek - addresses formatting function parsing issues."""
 
 import sys
+import re
 import ifcopenshell.util.selector
 from .debug import debug_print, error_print, is_debug_enabled
 
@@ -96,7 +97,9 @@ class ValueExtractor:
             debug_print(f"Processing formatting query: {format_query}")
 
             # Step 1: Parse the formatting query to find all value queries and build format string
-            processed_format_string = self.build_format_string(element, format_query)
+            processed_format_string = self.build_format_string_fixed(
+                element, format_query
+            )
 
             if not processed_format_string:
                 debug_print(
@@ -124,9 +127,7 @@ class ValueExtractor:
             )
             if is_debug_enabled():
                 import traceback
-                import sys
 
-                debug_print("Full formatting traceback:")
                 traceback.print_exc(file=sys.stderr)
 
             # Fallback: try to extract just the first value query we can find
@@ -142,8 +143,10 @@ class ValueExtractor:
 
             return ""
 
-    def build_format_string(self, element, format_query: str) -> str:
-        """Build a complete format string by replacing value queries with actual values.
+    def build_format_string_fixed(self, element, format_query: str) -> str:
+        """FIXED: Build a complete format string by replacing value queries with actual values.
+
+        This version properly handles nested function calls and complex paths.
 
         Args:
             element: IFC element to extract values from
@@ -152,32 +155,39 @@ class ValueExtractor:
         Returns:
             Format string with all value queries replaced by quoted actual values
         """
-        import re
+        debug_print(f"Building FIXED format string for: {format_query}")
 
-        debug_print(f"Building format string for: {format_query}")
+        # Process the query recursively to handle nested function calls
+        result = self.process_nested_functions(element, format_query)
 
-        # First, find all quoted strings to avoid replacing content within them
+        debug_print(f"Final format string: {result}")
+        return result
+
+    def process_nested_functions(self, element, query: str) -> str:
+        """Recursively process nested function calls from innermost to outermost.
+
+        Args:
+            element: IFC element to extract values from
+            query: Query string that may contain nested functions
+
+        Returns:
+            Processed query string
+        """
+        debug_print(f"Processing nested functions in: {query}")
+
+        # Find all quoted strings to avoid replacing content within them
         quoted_strings = []
         quote_pattern = r'"[^"]*"'
-        for match in re.finditer(quote_pattern, format_query):
+        for match in re.finditer(quote_pattern, query):
             quoted_strings.append((match.start(), match.end()))
 
-        debug_print(f"Found quoted string regions: {quoted_strings}")
+        def is_inside_quoted_string(pos):
+            """Check if a position is inside a quoted string."""
+            for start, end in quoted_strings:
+                if start <= pos < end:
+                    return True
+            return False
 
-        # Enhanced regex patterns ordered by specificity (most specific first)
-        # This prevents overlapping matches
-        patterns = [
-            # Property set patterns with dots (most specific)
-            r"\bPset_[a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*\b",
-            # Regex property patterns (between forward slashes)
-            r"/[^/]+/\.[a-zA-Z_][a-zA-Z0-9_]*",
-            # Property paths (word.word or word.word.word, etc.) - before single words
-            r"\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+\b",
-            # Common single properties (including coordinates) - after paths to avoid conflicts
-            r"\b(?:Name|class|id|predefined_type|x|y|z|easting|northing|elevation|description)\b",
-        ]
-
-        # Known formatting functions to exclude from replacement
         known_functions = {
             "upper",
             "lower",
@@ -190,104 +200,290 @@ class ValueExtractor:
             "imperial_length",
         }
 
-        def is_inside_quoted_string(pos):
-            """Check if a position is inside a quoted string."""
-            for start, end in quoted_strings:
-                if start <= pos < end:
-                    return True
-            return False
+        # Find the innermost function calls (those without nested function calls inside them)
+        function_pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\("
 
-        def is_overlapping(new_start, new_end, existing_matches):
-            """Check if a new match overlaps with any existing matches."""
-            for start, end, _ in existing_matches:
-                if not (new_end <= start or new_start >= end):
-                    return True
-            return False
+        # Keep processing until no more function calls are found
+        max_iterations = 10  # Prevent infinite loops
+        iteration = 0
 
-        # Find all potential value queries, excluding those inside quoted strings
-        # Process patterns in order of specificity to avoid overlaps
-        all_matches = []
+        while iteration < max_iterations:
+            iteration += 1
+            debug_print(f"Iteration {iteration}: {query}")
 
-        for pattern in patterns:
-            matches = re.finditer(pattern, format_query)
-            for match in matches:
-                potential_query = match.group(0)
-                start_pos = match.start()
-                end_pos = match.end()
+            # Find all function calls in current state
+            function_matches = []
+            for match in re.finditer(function_pattern, query):
+                func_name = match.group(1)
+                if func_name in known_functions:
+                    func_start = match.start()
+                    if not is_inside_quoted_string(func_start):
+                        # Find the matching closing parenthesis
+                        paren_start = match.end() - 1
+                        paren_end = self.find_matching_paren(
+                            query, paren_start, is_inside_quoted_string
+                        )
 
-                # Skip if this is a known function name
-                if potential_query in known_functions:
-                    debug_print(f"Skipping function name: {potential_query}")
-                    continue
+                        if paren_end != -1:
+                            function_matches.append(
+                                (func_start, paren_end + 1, func_name, paren_start)
+                            )
 
-                # Skip if this match is inside a quoted string
-                if is_inside_quoted_string(start_pos):
-                    debug_print(f"Skipping '{potential_query}' - inside quoted string")
-                    continue
+            if not function_matches:
+                debug_print("No more function calls found")
+                break
 
-                # Skip if this match overlaps with an existing match
-                if is_overlapping(start_pos, end_pos, all_matches):
-                    debug_print(
-                        f"Skipping '{potential_query}' - overlaps with existing match"
-                    )
-                    continue
-
-                all_matches.append((start_pos, end_pos, potential_query))
-                debug_print(
-                    f"Added non-overlapping match: '{potential_query}' at {start_pos}-{end_pos}"
-                )
-
-        # Sort by start position in reverse order for safe replacement
-        all_matches.sort(key=lambda x: x[0], reverse=True)
-
-        debug_print(
-            f"Final non-overlapping value queries: {[q for _, _, q in all_matches]}"
-        )
-
-        # Process matches and build replacement list
-        result = format_query
-        successful_replacements = 0
-
-        for start, end, potential_query in all_matches:
             debug_print(
-                f"Attempting to extract value for: '{potential_query}' at position {start}-{end}"
+                f"Found function calls: {[(name, start, end) for start, end, name, _ in function_matches]}"
             )
 
-            # Try to extract the value
-            try:
-                value = self.extract_raw_value(element, potential_query)
-                debug_print(f"Extracted value for '{potential_query}': '{value}'")
+            # Find innermost functions (those that don't contain other function calls)
+            innermost_functions = []
+            for func_start, func_end, func_name, paren_start in function_matches:
+                args_content = query[paren_start + 1 : func_end - 1]
 
-                # Replace even if value is empty (to handle null/empty cases properly)
-                # Quote the value properly for the format function
-                quoted_value = f'"{value}"'
+                # Check if this function's arguments contain other function calls
+                has_nested_functions = False
+                for other_start, other_end, _, _ in function_matches:
+                    if other_start > paren_start and other_end < func_end:
+                        has_nested_functions = True
+                        break
 
-                # Verify we're replacing the right text
-                original_text = result[start:end]
-                if original_text != potential_query:
-                    debug_print(
-                        f"WARNING: Text mismatch. Expected '{potential_query}', found '{original_text}'"
+                if not has_nested_functions:
+                    innermost_functions.append(
+                        (func_start, func_end, func_name, args_content)
                     )
-                    continue
 
-                result = result[:start] + quoted_value + result[end:]
-                debug_print(f"Replaced '{potential_query}' with {quoted_value}")
-                successful_replacements += 1
+            if not innermost_functions:
+                debug_print("No innermost functions found - stopping")
+                break
 
-            except Exception as e:
-                debug_print(
-                    f"Could not extract value for '{potential_query}': {type(e).__name__}: {e}"
+            debug_print(
+                f"Processing innermost functions: {[(name, args) for _, _, name, args in innermost_functions]}"
+            )
+
+            # Process innermost functions in reverse order (right to left) to maintain indices
+            innermost_functions.sort(key=lambda x: x[0], reverse=True)
+
+            for func_start, func_end, func_name, args_content in innermost_functions:
+                debug_print(f"Processing {func_name} with args: '{args_content}'")
+
+                # Process the arguments
+                processed_args = self.parse_and_replace_function_arguments(
+                    element, args_content
                 )
-                # For failed extractions, replace with empty string
-                quoted_value = '""'
-                result = result[:start] + quoted_value + result[end:]
-                debug_print(f"Replaced failed '{potential_query}' with empty string")
-                successful_replacements += 1
 
-        debug_print(f"Made {successful_replacements} successful replacements")
-        debug_print(f"Final format string: {result}")
+                if processed_args is not None:
+                    # Replace the function call with the processed version
+                    new_function_call = f"{func_name}({processed_args})"
+                    query = query[:func_start] + new_function_call + query[func_end:]
+                    debug_print(f"Replaced with: {new_function_call}")
+                else:
+                    debug_print(f"Failed to process arguments for {func_name}")
+                    # Replace with empty string as fallback
+                    query = query[:func_start] + '""' + query[func_end:]
 
+        return query
+
+    def find_matching_paren(
+        self, text: str, start_pos: int, is_inside_quoted_string
+    ) -> int:
+        """Find the matching closing parenthesis for an opening parenthesis.
+
+        Args:
+            text: The text to search in
+            start_pos: Position of the opening parenthesis
+            is_inside_quoted_string: Function to check if position is in quoted string
+
+        Returns:
+            Position of matching closing parenthesis, or -1 if not found
+        """
+        if start_pos >= len(text) or text[start_pos] != "(":
+            return -1
+
+        open_count = 1
+        pos = start_pos + 1
+
+        while pos < len(text) and open_count > 0:
+            if not is_inside_quoted_string(pos):
+                if text[pos] == "(":
+                    open_count += 1
+                elif text[pos] == ")":
+                    open_count -= 1
+            pos += 1
+
+        return pos - 1 if open_count == 0 else -1
+
+    def parse_and_replace_function_arguments(self, element, args_content: str) -> str:
+        """Parse function arguments and replace value queries with actual values.
+
+        Args:
+            element: IFC element to extract values from
+            args_content: The content between function parentheses
+
+        Returns:
+            Processed arguments string with value queries replaced, or None if failed
+        """
+        debug_print(f"Parsing function arguments: '{args_content}'")
+
+        if not args_content.strip():
+            return ""
+
+        # Split arguments by comma, but be careful about commas inside quoted strings and nested functions
+        args = self.split_function_arguments(args_content)
+        debug_print(f"Split into arguments: {args}")
+
+        processed_args = []
+
+        for i, arg in enumerate(args):
+            arg = arg.strip()
+            debug_print(f"Processing argument {i}: '{arg}'")
+
+            # Check if this argument is already quoted (literal string)
+            if arg.startswith('"') and arg.endswith('"'):
+                debug_print(f"Argument {i} is already quoted - keeping as is")
+                processed_args.append(arg)
+            # Check if this argument is a number
+            elif self.is_number(arg):
+                debug_print(f"Argument {i} is a number - keeping as is")
+                processed_args.append(arg)
+            # Check if this argument contains a function call (already processed)
+            elif any(
+                func in arg
+                for func in [
+                    "upper(",
+                    "lower(",
+                    "title(",
+                    "concat(",
+                    "round(",
+                    "int(",
+                    "number(",
+                    "metric_length(",
+                    "imperial_length(",
+                ]
+            ):
+                debug_print(f"Argument {i} contains function call - keeping as is")
+                processed_args.append(arg)
+            else:
+                # This should be a value query - extract the value and quote it
+                debug_print(f"Argument {i} appears to be a value query")
+                try:
+                    value = self.extract_raw_value(element, arg)
+                    # Handle the case where value extraction returns empty string
+                    if value == "":
+                        debug_print(
+                            f"Value extraction returned empty string for '{arg}' - this might be expected"
+                        )
+                    quoted_value = f'"{value}"'
+                    processed_args.append(quoted_value)
+                    debug_print(f"Replaced argument {i} '{arg}' with {quoted_value}")
+                except Exception as e:
+                    debug_print(
+                        f"Failed to extract value for argument {i} '{arg}': {e}"
+                    )
+                    # Use empty string as fallback
+                    processed_args.append('""')
+
+        result = ", ".join(processed_args)
+        debug_print(f"Final processed arguments: {result}")
         return result
+
+    def split_function_arguments(self, args_content: str) -> list:
+        """Split function arguments by comma, respecting quoted strings and nested parentheses.
+
+        Args:
+            args_content: The argument string to split
+
+        Returns:
+            List of argument strings
+        """
+        if not args_content.strip():
+            return []
+
+        args = []
+        current_arg = ""
+        in_quotes = False
+        paren_depth = 0
+        i = 0
+
+        while i < len(args_content):
+            char = args_content[i]
+
+            if char == '"' and (i == 0 or args_content[i - 1] != "\\"):
+                in_quotes = not in_quotes
+                current_arg += char
+            elif not in_quotes:
+                if char == "(":
+                    paren_depth += 1
+                    current_arg += char
+                elif char == ")":
+                    paren_depth -= 1
+                    current_arg += char
+                elif char == "," and paren_depth == 0:
+                    # This comma is at the top level - it's an argument separator
+                    args.append(current_arg.strip())
+                    current_arg = ""
+                else:
+                    current_arg += char
+            else:
+                current_arg += char
+
+            i += 1
+
+        # Don't forget the last argument
+        if current_arg.strip():
+            args.append(current_arg.strip())
+
+        return args
+
+    def is_number(self, text: str) -> bool:
+        """Check if a string represents a number.
+
+        Args:
+            text: String to check
+
+        Returns:
+            True if the string is a number
+        """
+        try:
+            float(text)
+            return True
+        except ValueError:
+            return False
+
+    def is_formatting_query(self, value_query: str) -> bool:
+        """Check if a value query contains formatting functions.
+
+        Args:
+            value_query: The query string to check
+
+        Returns:
+            True if the query contains formatting functions, False otherwise
+        """
+        debug_print(f"Checking if '{value_query}' is a formatting query")
+
+        # Known formatting functions from the documentation
+        formatting_functions = [
+            "upper",
+            "lower",
+            "title",
+            "concat",
+            "round",
+            "int",
+            "number",
+            "metric_length",
+            "imperial_length",
+        ]
+
+        # Check for function patterns: function_name(...)
+        for func in formatting_functions:
+            pattern = rf"\b{re.escape(func)}\s*\("
+            if re.search(pattern, value_query):
+                debug_print(f"Found formatting function '{func}' in query")
+                return True
+
+        debug_print("No formatting functions found in query")
+        return False
 
     def extract_first_value_query(self, format_query: str) -> str:
         """Extract the first value query from a formatting query for fallback purposes.
@@ -298,17 +494,19 @@ class ValueExtractor:
         Returns:
             First value query found, or empty string if none found
         """
-        import re
-
         debug_print(f"Extracting first value query from: {format_query}")
 
-        # Use the same patterns as in build_format_string
+        # Look for patterns that could be value queries
+        # Priority order: complex paths first, then simple ones
         patterns = [
-            r"\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+\b",
+            # Complex paths with dots and indices (like ObjectPlacement.RelativePlacement.Location.Coordinates.0)
+            r"\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*\.\d+\b",
+            # Property set patterns
             r"\bPset_[a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*\b",
-            r"/[^/]+/\.[a-zA-Z_][a-zA-Z0-9_]*",
+            # Regular paths with dots
+            r"\b[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+\b",
+            # Simple property names
             r"\b(?:Name|class|id|predefined_type|x|y|z|easting|northing|elevation)\b",
-            r"\b(?:material|storey|building|site|container|space|parent|type|types|occurrences|description)\b",
         ]
 
         known_functions = {
@@ -332,43 +530,6 @@ class ValueExtractor:
 
         debug_print("No value query found in format string")
         return ""
-
-    def is_formatting_query(self, value_query: str) -> bool:
-        """Check if a value query contains formatting functions.
-
-        Args:
-            value_query: The query string to check
-
-        Returns:
-            True if the query contains formatting functions, False otherwise
-        """
-        import re
-
-        debug_print(f"Checking if '{value_query}' is a formatting query")
-
-        # Known formatting functions from the documentation
-        formatting_functions = [
-            "upper",
-            "lower",
-            "title",
-            "concat",
-            "round",
-            "int",
-            "number",
-            "metric_length",
-            "imperial_length",
-        ]
-
-        # Check for function patterns: function_name(...)
-        # This regex looks for word boundaries, function name, optional whitespace, then opening parenthesis
-        for func in formatting_functions:
-            pattern = rf"\b{re.escape(func)}\s*\("
-            if re.search(pattern, value_query):
-                debug_print(f"Found formatting function '{func}' in query")
-                return True
-
-        debug_print("No formatting functions found in query")
-        return False
 
     def process_value_queries(self, elements: list, value_queries: list) -> list:
         """Process value queries for a list of elements.
@@ -416,9 +577,7 @@ class ValueExtractor:
             debug_print(f"Error type: {type(e).__name__}: {e}")
             if is_debug_enabled():
                 import traceback
-                import sys
 
-                print("Full traceback:", file=sys.stderr)
                 traceback.print_exc(file=sys.stderr)
 
             # Return empty results to prevent further errors
@@ -456,20 +615,6 @@ class ValueExtractor:
             error_print(f"Failed to format values {values}: {e}")
             if is_debug_enabled():
                 import traceback
-                import sys
 
                 traceback.print_exc(file=sys.stderr)
             return ""
-
-    def parse_formatting_query(self, format_query: str) -> str:
-        """Parse a formatting query to extract the inner value query.
-
-        This method is kept for backwards compatibility but enhanced to handle multiple value queries.
-
-        Args:
-            format_query: Formatting query (e.g., 'upper(type.Name)')
-
-        Returns:
-            First inner value query (e.g., 'type.Name')
-        """
-        return self.extract_first_value_query(format_query)
