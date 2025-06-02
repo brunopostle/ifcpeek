@@ -73,7 +73,8 @@ def test_main_implementation_complete():
     assert "from .shell import IfcPeek" in source
 
     # Verify implementation is complete (Step 3 removes TODO placeholders)
-    assert "shell = IfcPeek(args.ifc_file)" in source
+    # FIXED: Updated to match the new signature with force_interactive parameter
+    assert "shell = IfcPeek(args.ifc_file" in source
     assert "shell.run()" in source
 
     # Should NOT have TODO comments since Step 3 implements the functionality

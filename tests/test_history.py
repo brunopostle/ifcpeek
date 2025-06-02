@@ -17,7 +17,7 @@ class TestHistoryIntegration:
         with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
             mock_open.return_value = Mock()
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
             assert shell is not None
             assert shell.model is not None
@@ -33,7 +33,7 @@ class TestHistoryIntegration:
             with patch(
                 "ifcpeek.shell.FileHistory", side_effect=Exception("History failed")
             ):
-                shell = IfcPeek(str(mock_ifc_file))
+                shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
                 # Should still work with fallback
                 assert shell is not None
@@ -55,7 +55,7 @@ class TestHistoryIntegration:
             with patch(
                 "ifcpeek.shell.PromptSession", side_effect=Exception("Session failed")
             ):
-                shell = IfcPeek(str(mock_ifc_file))
+                shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
                 # Should still work with fallback
                 assert shell is not None
@@ -75,7 +75,7 @@ class TestHistoryIntegration:
             mock_model.schema = "IFC4"
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()  # Clear initialization output
 
             # Test core commands work
@@ -95,7 +95,7 @@ class TestHistoryIntegration:
         with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
             mock_open.return_value = Mock()
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             shell._show_help()
@@ -153,7 +153,7 @@ class TestHistoryIntegration:
                 with patch(
                     "ifcpeek.shell.FileHistory", side_effect=Exception("No FileHistory")
                 ):
-                    shell = IfcPeek(str(mock_ifc_file))
+                    shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
                     # Shell should still be functional
                     assert shell.model is not None
@@ -197,7 +197,7 @@ class TestHistoryIntegration:
             with patch(
                 "ifcpeek.shell.FileHistory", side_effect=Exception("History failed")
             ):
-                shell = IfcPeek(str(mock_ifc_file))
+                shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
                 # Completion cache should still be built despite history failure
                 assert shell.completion_cache is not None
@@ -231,7 +231,7 @@ class TestHistoryIntegration:
                 dc_module.create_dynamic_completion_system = failing_create_system
 
                 # Now create the shell - this should trigger the completion cache failure
-                shell = IfcPeek(str(mock_ifc_file))
+                shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
                 # Verify that completion cache failed to build
                 assert shell.completion_cache is None
@@ -260,7 +260,7 @@ class TestHistoryIntegration:
             with patch(
                 "ifcpeek.shell.PromptSession", side_effect=Exception("No session")
             ):
-                shell = IfcPeek(str(mock_ifc_file))
+                shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
                 assert shell.session is None
 
                 # Mock the input function to simulate user input

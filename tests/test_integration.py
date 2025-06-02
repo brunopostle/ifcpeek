@@ -64,7 +64,9 @@ class TestMainToShellIntegration:
         self, mock_ifc_file, mock_selector, capsys
     ):
         """Test complete workflow from main() to shell exit."""
-        with patch("sys.argv", ["ifcpeek", str(mock_ifc_file)]):
+        with patch(
+            "sys.argv", ["ifcpeek", str(mock_ifc_file), "--force-interactive"]
+        ):  # FIXED
             with patch("ifcpeek.shell.ifcopenshell.open") as mock_open:
                 mock_model = Mock()
                 mock_model.schema = "IFC4"
@@ -125,7 +127,7 @@ class TestQueryExecutionIntegration:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
             # Clear initialization output
             capsys.readouterr()
@@ -154,7 +156,7 @@ class TestQueryExecutionIntegration:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             # Configure mock for query error
@@ -187,7 +189,7 @@ class TestQueryExecutionIntegration:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             # Configure mock entity
@@ -229,7 +231,7 @@ class TestSignalHandlingIntegration:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             # Configure successful query
@@ -269,7 +271,7 @@ class TestSignalHandlingIntegration:
                 mock_model.by_type.return_value = []
                 mock_open.return_value = mock_model
 
-                shell = IfcPeek(str(mock_ifc_file))
+                shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
                 capsys.readouterr()
 
                 # Configure mock for queries
@@ -300,7 +302,7 @@ class TestErrorHandlingIntegration:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             # Configure mock to raise complex error
@@ -331,7 +333,7 @@ class TestErrorHandlingIntegration:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             # Test different error types
@@ -370,7 +372,7 @@ class TestCommandSystemIntegration:
             mock_model = Mock()
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             # Test all command types
@@ -400,7 +402,7 @@ class TestCommandSystemIntegration:
             mock_model = Mock()
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             # First simulate a query error
@@ -437,7 +439,7 @@ class TestHistoryIntegration:
                 with patch(
                     "ifcpeek.config.get_history_file_path", return_value=history_path
                 ):
-                    shell = IfcPeek(str(mock_ifc_file))
+                    shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
                     # Shell should be created successfully regardless of history
                     assert shell.model is not None
 
@@ -449,7 +451,7 @@ class TestHistoryIntegration:
                 with patch(
                     "ifcpeek.shell.FileHistory", side_effect=Exception("History failed")
                 ):
-                    shell = IfcPeek(str(mock_ifc_file))
+                    shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
                     # Should fall back to None session but still work
                     assert shell.session is None
 
@@ -480,7 +482,7 @@ class TestHistoryIntegration:
                 with patch(
                     "ifcpeek.config.get_history_file_path", return_value=history_path
                 ):
-                    shell = IfcPeek(str(mock_ifc_file))
+                    shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
                     # Test all core functionality still works
                     functionality_tests = [
@@ -518,7 +520,7 @@ class TestPerformanceAndStability:
             mock_open.return_value = mock_model
 
             start_time = time.time()
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             initialization_time = time.time() - start_time
 
             # Initialization should be fast (< 1 second for mocked operations)
@@ -535,7 +537,7 @@ class TestPerformanceAndStability:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
             # Configure mock for queries
             mock_entity = Mock()
@@ -565,7 +567,7 @@ class TestEndToEndScenarios:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             # Configure mock entities
@@ -623,7 +625,7 @@ class TestEndToEndScenarios:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             mock_wall = Mock()

@@ -1,6 +1,6 @@
 """
-Updated shell.py with enhanced tab completion for both filter queries and value extraction.
-Debug commands and excessive debug output removed for cleaner operation.
+Updated shell.py with STDIN pipe detection and non-interactive mode.
+Fixes issue where piped input causes terminal control sequences and warnings.
 """
 
 import sys
@@ -34,14 +34,16 @@ class IfcPeek:
         "/debug": "_toggle_debug",
     }
 
-    def __init__(
-        self, ifc_file_path: str, force_session_creation: bool = False
-    ) -> None:
+    def __init__(self, ifc_file_path: str, force_interactive: bool = False) -> None:
         """Initialize shell with IFC model, enhanced tab completion, and error handling."""
         verbose_print(f"IfcPeek initializing with file: {ifc_file_path}")
 
-        self.force_session_creation = force_session_creation
+        self.force_interactive = force_interactive
         self.value_extractor = ValueExtractor()
+
+        # Detect if input is from a pipe/file rather than interactive terminal
+        self.is_interactive = self._is_interactive_mode()
+        debug_print(f"Interactive mode: {self.is_interactive}")
 
         # Validate and load IFC file
         try:
@@ -64,38 +66,74 @@ class IfcPeek:
                 traceback.print_exc(file=sys.stderr)
             raise
 
-        # Build enhanced completion system
-        try:
-            debug_print("Building enhanced completion system...")
-            from .dynamic_completion import create_dynamic_completion_system
+        # Build enhanced completion system only for interactive mode
+        if self.is_interactive:
+            try:
+                debug_print("Building enhanced completion system...")
+                from .dynamic_completion import create_dynamic_completion_system
 
-            self.completion_cache, self.completer = create_dynamic_completion_system(
-                self.model
-            )
+                self.completion_cache, self.completer = (
+                    create_dynamic_completion_system(self.model)
+                )
 
-            # Print summary of what was cached
-            debug_info = self.completer.get_debug_info()
-            debug_print(
-                f"Enhanced completion ready: {debug_info['total_classes']} classes, "
-                f"{debug_info['cached_attributes']} classes with attributes, "
-                f"{debug_info['property_sets']} property sets"
-            )
+                # Print summary of what was cached
+                debug_info = self.completer.get_debug_info()
+                debug_print(
+                    f"Enhanced completion ready: {debug_info['total_classes']} classes, "
+                    f"{debug_info['cached_attributes']} classes with attributes, "
+                    f"{debug_info['property_sets']} property sets"
+                )
 
-        except Exception as e:
-            warning_print(f"Failed to build enhanced completion system: {e}")
-            if is_debug_enabled():
-                traceback.print_exc(file=sys.stderr)
+            except Exception as e:
+                warning_print(f"Failed to build enhanced completion system: {e}")
+                if is_debug_enabled():
+                    traceback.print_exc(file=sys.stderr)
+                self.completion_cache = None
+                self.completer = None
+        else:
+            # Skip completion system for non-interactive mode
+            debug_print("Skipping completion system for non-interactive mode")
             self.completion_cache = None
             self.completer = None
 
-        # Create session
-        try:
-            self.session = self._create_session()
-        except Exception as e:
-            warning_print(f"Session creation failed: {e}")
+        # Create session only for interactive mode
+        if self.is_interactive:
+            try:
+                self.session = self._create_session()
+            except Exception as e:
+                warning_print(f"Session creation failed: {e}")
+                self.session = None
+        else:
+            # No session needed for non-interactive mode
             self.session = None
 
         self._setup_signal_handlers()
+
+    def _is_interactive_mode(self) -> bool:
+        """Detect if we're running in interactive mode vs processing piped input."""
+        try:
+            # Allow tests to force interactive mode
+            if self.force_interactive:
+                debug_print("Interactive mode forced via force_interactive flag")
+                return True
+
+            # Check if STDIN is connected to a terminal
+            if not sys.stdin.isatty():
+                debug_print("STDIN is not a TTY - non-interactive mode")
+                return False
+
+            # Check if STDOUT is connected to a terminal
+            if not sys.stdout.isatty():
+                debug_print("STDOUT is not a TTY - non-interactive mode")
+                return False
+
+            debug_print("Both STDIN and STDOUT are TTYs - interactive mode")
+            return True
+
+        except Exception as e:
+            debug_print(f"Error detecting interactive mode: {e}")
+            # Default to interactive if we can't determine
+            return True
 
     def _load_model(self):
         """Load IFC model."""
@@ -133,7 +171,13 @@ class IfcPeek:
         try:
 
             def sigint_handler(signum, frame):
-                print("\n(Use Ctrl-D to exit, or type /exit)", file=sys.stderr)
+                if self.is_interactive:
+                    print("\n(Use Ctrl-D to exit, or type /exit)", file=sys.stderr)
+                else:
+                    # For non-interactive mode, exit immediately
+                    # But don't exit during tests (when force_interactive might be set)
+                    if not self.force_interactive:
+                        sys.exit(0)
                 return
 
             def sigterm_handler(signum, frame):
@@ -200,7 +244,7 @@ class IfcPeek:
             results = ifcopenshell.util.selector.filter_elements(self.model, query)
 
             for formatted_line in format_query_results(
-                results, enable_highlighting=True
+                results, enable_highlighting=self.is_interactive
             ):
                 print(formatted_line)
 
@@ -226,7 +270,7 @@ class IfcPeek:
 
             if not value_queries:
                 for formatted_line in format_query_results(
-                    results, enable_highlighting=True
+                    results, enable_highlighting=self.is_interactive
                 ):
                     print(formatted_line)
                 return
@@ -306,6 +350,10 @@ HISTORY:
   Up/Down  - Navigate command history
   Ctrl-R   - Search command history
 
+PIPED INPUT:
+  echo 'IfcWall' | ifcpeek model.ifc     - Process single query from STDIN
+  ifcpeek model.ifc < queries.txt        - Process multiple queries from file
+
 For complete selector syntax details, see IfcOpenShell documentation.
 """
         print(help_text, file=sys.stderr)
@@ -328,9 +376,42 @@ For complete selector syntax details, see IfcOpenShell documentation.
             print("Debug mode enabled.", file=sys.stderr)
         return True
 
-    def run(self) -> None:
-        """Main shell loop."""
+    def _process_piped_input(self) -> None:
+        """Process input from STDIN when running in non-interactive mode."""
+        debug_print("Processing piped input from STDIN")
+
         try:
+            for line_number, line in enumerate(sys.stdin, 1):
+                line = line.strip()
+                if not line:
+                    continue
+
+                debug_print(f"Processing line {line_number}: {line}")
+
+                # Process the input line
+                if not self._process_input(line):
+                    # If _process_input returns False (exit command), break
+                    break
+
+        except EOFError:
+            debug_print("EOF reached on STDIN")
+        except KeyboardInterrupt:
+            debug_print("Interrupted while processing STDIN")
+        except Exception as e:
+            error_print(f"Error processing piped input: {e}")
+            if is_debug_enabled():
+                traceback.print_exc(file=sys.stderr)
+
+    def run(self) -> None:
+        """Main shell loop - handles both interactive and non-interactive modes."""
+        try:
+            if not self.is_interactive:
+                # Non-interactive mode: process STDIN and exit
+                debug_print("Running in non-interactive mode")
+                self._process_piped_input()
+                return
+
+            # Interactive mode: show startup messages and run prompt loop
             verbose_print("IfcPeek starting")
             if self.session and self.completer:
                 verbose_print("Enhanced tab completion enabled")
@@ -365,4 +446,5 @@ For complete selector syntax details, see IfcOpenShell documentation.
             if is_debug_enabled():
                 traceback.print_exc(file=sys.stderr)
 
-        verbose_print("Shell session ended")
+        if self.is_interactive:
+            verbose_print("Shell session ended")

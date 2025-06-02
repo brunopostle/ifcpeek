@@ -24,6 +24,11 @@ def main() -> None:
         action="store_true",
         help="Enable verbose startup information",
     )
+    parser.add_argument(
+        "--force-interactive",
+        action="store_true",
+        help="Force interactive mode even when STDIN/STDOUT are not TTYs (for testing)",
+    )
 
     try:
         args = parser.parse_args()
@@ -46,13 +51,15 @@ def main() -> None:
                 f"Debug mode: {'enabled' if args.debug else 'disabled'}",
                 file=sys.stderr,
             )
+            if args.force_interactive:
+                print("Force interactive mode: enabled", file=sys.stderr)
             print("Error handling and debugging active", file=sys.stderr)
             print("=" * 60, file=sys.stderr)
 
         # Create and run the IfcPeek with error reporting
         shell = None
         try:
-            shell = IfcPeek(args.ifc_file)
+            shell = IfcPeek(args.ifc_file, force_interactive=args.force_interactive)
             shell.run()
 
         except IfcPeekError as e:

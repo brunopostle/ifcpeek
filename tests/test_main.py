@@ -31,7 +31,9 @@ class TestArgumentParsing:
 
                 main()
 
-                mock_shell_class.assert_called_once_with(str(mock_ifc_file))
+                mock_shell_class.assert_called_once_with(
+                    str(mock_ifc_file), force_interactive=False
+                )
                 mock_shell_instance.run.assert_called_once()
 
     def test_argument_parser_help(self, capsys):

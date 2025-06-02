@@ -18,7 +18,7 @@ class TestIfcPeekInitialization:
             mock_model.by_type.return_value = ["entity1", "entity2", "entity3"]
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
             assert shell.model == mock_model
             assert hasattr(shell, "session")
@@ -56,7 +56,7 @@ class TestQueryExecution:
             mock_model = Mock()
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()  # Clear initialization output
 
             mock_entity = Mock()
@@ -80,7 +80,7 @@ class TestQueryExecution:
             mock_model = Mock()
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             mock_selector.side_effect = Exception("Invalid selector syntax")
@@ -96,7 +96,7 @@ class TestQueryExecution:
             mock_model = Mock()
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             result = shell._process_input("")
 
             assert result is True
@@ -112,7 +112,7 @@ class TestBuiltinCommands:
             mock_model = Mock()
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             result = shell._process_input("/help")
@@ -127,7 +127,7 @@ class TestBuiltinCommands:
             mock_model = Mock()
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
             assert shell._process_input("/exit") is False
             assert shell._process_input("/quit") is False
@@ -144,7 +144,7 @@ class TestShellRunMethod:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             with patch.object(shell, "session") as mock_session:
@@ -162,7 +162,7 @@ class TestShellRunMethod:
             mock_model.by_type.return_value = []
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()
 
             with patch.object(shell, "session") as mock_session:

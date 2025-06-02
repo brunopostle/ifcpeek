@@ -24,7 +24,7 @@ class TestCoreErrorHandling:
             mock_model.schema = "IFC4"
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()  # Clear
 
             with patch(
@@ -71,7 +71,7 @@ class TestCoreErrorHandling:
             mock_model = Mock()
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()  # Clear
 
             # Get and test SIGINT handler
@@ -97,7 +97,7 @@ class TestCoreErrorHandling:
             mock_model.schema = "IFC4"
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()  # Clear
 
             # Simulate error in _execute_query
@@ -163,7 +163,7 @@ class TestDebugOutput:
             mock_model.schema = "IFC4"
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()  # Clear
 
             mock_entity = Mock()
@@ -185,7 +185,7 @@ class TestDebugOutput:
             mock_model.schema = "IFC4"
             mock_open.return_value = mock_model
 
-            shell = IfcPeek(str(mock_ifc_file))
+            shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
             capsys.readouterr()  # Clear
 
             mock_entity = Mock()
