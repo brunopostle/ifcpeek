@@ -236,12 +236,6 @@ if __name__ == "__main__":
     # Simple smoke test
     print("Running minimal ifcpeek tests...")
 
-    # Test basic imports work
-    from ifcpeek.shell import IfcPeek
-    from ifcpeek.formatters import StepHighlighter
-
-    print("✅ Imports successful")
-
     # Test basic functionality
     highlighter = StepHighlighter()
     test_line = "#1=IFCWALL('guid',$,$,'Wall');"

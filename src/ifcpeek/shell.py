@@ -72,9 +72,10 @@ class IfcPeek:
                 debug_print("Building enhanced completion system...")
                 from .dynamic_completion import create_dynamic_completion_system
 
-                self.completion_cache, self.completer = (
-                    create_dynamic_completion_system(self.model)
-                )
+                (
+                    self.completion_cache,
+                    self.completer,
+                ) = create_dynamic_completion_system(self.model)
 
                 # Print summary of what was cached
                 debug_info = self.completer.get_debug_info()

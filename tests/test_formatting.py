@@ -477,6 +477,4 @@ if __name__ == "__main__":
     print("  • Real-world scenarios")
     print("=" * 60)
 
-    import pytest
-
     pytest.main([__file__, "-v"])

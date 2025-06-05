@@ -6,10 +6,8 @@ Tests piped input, TTY detection, and non-interactive behavior.
 import pytest
 import tempfile
 import os
-import subprocess
-import sys
 from pathlib import Path
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, patch
 from ifcpeek.shell import IfcPeek
 
 

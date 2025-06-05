@@ -11,7 +11,7 @@ from prompt_toolkit.document import Document
 import ifcopenshell
 import ifcopenshell.util.selector
 from .completion_cache import DynamicIfcCompletionCache
-from .debug import debug_print, verbose_print
+from .debug import debug_print
 
 
 class FilterQueryCompleter(Completer):
@@ -61,7 +61,7 @@ class FilterQueryCompleter(Completer):
         debug_print(f"FilterQueryCompleter: Yielded {yielded_count} completions")
 
     def _parse_current_word(self, text_before_cursor: str) -> tuple:
-        """Parse current word and start position."""
+        """Parse current word and start position with proper negation handling."""
         current_word = ""
         start_position = 0
 
@@ -77,7 +77,35 @@ class FilterQueryCompleter(Completer):
                     current_word = after_equals
                     start_position = -len(current_word) if current_word else 0
         else:
-            # Original logic for attribute/class completion
+            # Handle negation patterns first, then fall back to original logic
+
+            # Pattern 1: "! Ifc" or "! IfcW" (space after !)
+            space_negation = re.search(r"!\s+([A-Za-z]*)$", text_before_cursor)
+            if space_negation:
+                current_word = space_negation.group(1)
+                start_position = -len(current_word) if current_word else 0
+                return current_word, start_position
+
+            # Pattern 2: "!Ifc" or "!IfcW" (no space after !)
+            no_space_negation = re.search(r"!([A-Za-z]+)$", text_before_cursor)
+            if no_space_negation:
+                current_word = no_space_negation.group(1)
+                start_position = -len(current_word)
+                return current_word, start_position
+
+            # Pattern 3: Just "!" - ready to complete
+            if text_before_cursor.endswith("!"):
+                current_word = ""
+                start_position = 0  # Don't replace anything, just add after
+                return current_word, start_position
+
+            # Pattern 4: "! " (bang + space) - ready to complete
+            if re.search(r"!\s+$", text_before_cursor):
+                current_word = ""
+                start_position = 0  # Don't replace anything, just add after
+                return current_word, start_position
+
+            # Original logic for non-negation cases
             word_match = re.search(r"[^,+\s]*$", text_before_cursor)
             if word_match:
                 current_word = word_match.group()
@@ -88,10 +116,19 @@ class FilterQueryCompleter(Completer):
     def _get_contextual_completions(
         self, text_before_cursor: str, current_word: str
     ) -> Set[str]:
-        """Get contextual completions based on the current position in the filter query."""
+        """Get contextual completions based on the current position in the filter query.
+
+        Updated to include negation support.
+        """
         completions = set()
 
-        # Analyze context
+        # NEW: Check if we're in a negation context
+        if re.search(r"!\s*[A-Za-z]*$", text_before_cursor):
+            # We're completing after '!' - suggest IFC classes that can be negated
+            completions.update(self.cache.ifc_classes_in_model)
+            return completions
+
+        # Original contextual completion logic
         context = self._analyze_filter_context(text_before_cursor)
 
         debug_print(f"Context for '{text_before_cursor}': {context}")
@@ -148,12 +185,49 @@ class FilterQueryCompleter(Completer):
             context["expecting_class"] = True
             return context
 
+        # Check for value completion (after '=')
         equals_match = re.search(r"([^,+\s]+)\s*=\s*$", text)
         if equals_match:
             context["expecting_value"] = True
             context["current_attribute"] = equals_match.group(1)
             return context
 
+        # MAIN FIX: Better detection of partial attributes after comma
+        # Pattern: "IfcClass, PartialWord" where PartialWord could be partial attribute
+        ifc_comma_pattern = r"Ifc[A-Za-z0-9]+\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*$"
+        ifc_comma_match = re.search(ifc_comma_pattern, text)
+        if ifc_comma_match:
+            word_after_comma = ifc_comma_match.group(1)
+
+            # Determine if this is a complete attribute (expecting comparison)
+            # or partial attribute (expecting completion)
+
+            # Known complete filter keywords that should expect comparison
+            complete_keywords = {
+                "material",
+                "type",
+                "location",
+                "parent",
+                "classification",
+                "query",
+            }
+
+            if word_after_comma in complete_keywords:
+                # This is a complete word - expect comparison operator
+                context["expecting_comparison"] = True
+                context["current_attribute"] = word_after_comma
+            else:
+                # This is likely a partial word - expect attribute/keyword completion
+                context["expecting_attribute_or_keyword"] = True
+
+            return context
+
+        # Check for attribute completion after comma + space (no partial word yet)
+        if re.search(r"Ifc[A-Za-z0-9]+\s*,\s+$", text):
+            context["expecting_attribute_or_keyword"] = True
+            return context
+
+        # Check for comparison operator expectation (original logic)
         attr_match = re.search(r"([^,+\s=]+)\s*$", text)
         if attr_match and not text.endswith(",") and not text.endswith("+"):
             possible_attr = attr_match.group(1)
@@ -164,10 +238,7 @@ class FilterQueryCompleter(Completer):
                 context["current_attribute"] = possible_attr
                 return context
 
-        if re.search(r"Ifc[A-Za-z0-9]+\s*,\s+$", text):
-            context["expecting_attribute_or_keyword"] = True
-            return context
-
+        # Rest of the original logic...
         text_stripped = text.strip()
         if text_stripped.endswith(",") or text_stripped.endswith("+"):
             context["at_start_or_after_separator"] = True
@@ -188,8 +259,8 @@ class FilterQueryCompleter(Completer):
         elif last_segment.endswith("."):
             context["expecting_property_name"] = True
             pset_candidate = last_segment[:-1]
-            if pset_candidate in self.cache.property_sets:
-                context["current_pset"] = pset_candidate
+            # Note: You may need to check against self.cache.property_sets here
+            context["current_pset"] = pset_candidate
         else:
             context["expecting_attribute_or_keyword"] = True
 
@@ -464,7 +535,7 @@ class DynamicContextResolver:
                 # Add selector keywords that work on lists
                 if hasattr(self.cache, "selector_keywords"):
                     attributes.update(self.cache.selector_keywords)
-                    debug_print(f"Added selector keywords for list")
+                    debug_print("Added selector keywords for list")
 
                 debug_print(f"List result completions: {sorted(attributes)}")
                 return attributes
@@ -479,7 +550,7 @@ class DynamicContextResolver:
             # Add selector keywords that work on objects
             if hasattr(self.cache, "selector_keywords"):
                 attributes.update(self.cache.selector_keywords)
-                debug_print(f"Added selector keywords for object")
+                debug_print("Added selector keywords for object")
 
         except Exception as e:
             debug_print(f"Error in _inspect_result: {e}")

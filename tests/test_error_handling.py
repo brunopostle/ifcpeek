@@ -201,7 +201,5 @@ class TestDebugOutput:
 
 # Run tests
 if __name__ == "__main__":
-    # This allows the file to be run directly for debugging
-    import pytest
 
     pytest.main([__file__])

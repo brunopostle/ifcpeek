@@ -7,9 +7,7 @@ allowing us to test just the query parsing and routing logic.
 
 import pytest
 from unittest.mock import Mock, patch
-from pathlib import Path
 from ifcpeek.shell import IfcPeek
-from ifcpeek.value_extraction import ValueExtractor
 
 
 def create_test_shell():
@@ -65,10 +63,10 @@ def create_test_shell():
 
             return True
 
-        except ValueError as e:
+        except ValueError:
             # Print error but continue shell
             return True
-        except Exception as e:
+        except Exception:
             # Print error but continue shell
             return True
 
@@ -606,9 +604,11 @@ class TestCorrectQuotedStringParsing:
             expected_values,
             expected_combined,
         ) in test_cases:
-            filter_query, value_queries, is_combined = (
-                self.parse_combined_query_correct(input_query)
-            )
+            (
+                filter_query,
+                value_queries,
+                is_combined,
+            ) = self.parse_combined_query_correct(input_query)
 
             assert (
                 filter_query == expected_filter
@@ -655,9 +655,11 @@ class TestCorrectQuotedStringParsing:
             expected_combined,
         ) in test_cases:
             try:
-                filter_query, value_queries, is_combined = (
-                    self.parse_combined_query_correct(input_query)
-                )
+                (
+                    filter_query,
+                    value_queries,
+                    is_combined,
+                ) = self.parse_combined_query_correct(input_query)
 
                 assert (
                     filter_query == expected_filter
@@ -786,7 +788,6 @@ class TestCurrentWorkingBehavior:
 
     def test_semicolon_splitting_logic(self, shell_with_mocks):
         """Test the core semicolon splitting logic."""
-        shell = shell_with_mocks
 
         # Test internal parsing logic directly
         test_inputs = [
