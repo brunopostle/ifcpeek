@@ -31,7 +31,7 @@ ifcpeek path/to/your/model.ifc
 
 - **Explore any IFC model interactively** with intelligent tab completion
 - **Extract bulk data** for quantity takeoffs and custom schedules
-- **Export to CSV** for analysis in Excel or other tools
+- **Export to CSV** for analysis in spreadsheet or other tools
 - **Discover what's actually in your model** without guessing
 - **Format data cleanly** with built-in formatting functions
 
@@ -193,7 +193,7 @@ Available functions include: `upper()`, `lower()`, `title()`, `concat()`, `round
 # Find all concrete elements and get quantities
 > IfcWall, IfcSlab, material=concrete ; Name ; type.Name ; Qto_.*Quantities.NetVolume
 
-# Export to file for Excel analysis
+# Export to file for spreasheet analysis
 echo 'IfcWall, IfcSlab, material=concrete ; Name ; type.Name ; Qto_.*Quantities.NetVolume' | ifcpeek model.ifc > concrete_quantities.csv
 ```
 
@@ -238,14 +238,6 @@ for model in *.ifc; do
   echo 'IfcWall ; Name ; Qto_WallBaseQuantities.NetArea' | ifcpeek "$model" > "${model%.ifc}_walls.csv"
 done
 ```
-
-### Integration with Analysis Tools
-
-The tab-separated output works directly with:
-- **Excel**: Open CSV files or copy-paste data
-- **Power BI**: Import as data source
-- **Python/R**: Read with pandas/data.table
-- **Cost estimation software**: Most accept CSV imports
 
 ## Advanced Features
 
