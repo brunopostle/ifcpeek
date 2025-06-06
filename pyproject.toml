@@ -7,11 +7,11 @@ name = "ifcpeek"
 version = "1.0.0"
 description = "Interactive command-line shell for querying IFC models"
 authors = [{name = "Bruno Postle", email = "bruno@postle.net"}]
-license = {text = "GPLv3"}
+license = {text = "GPL-3.0-or-later"}
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "ifcopenshell>=0.8.3",
+    "ifcopenshell>=0.8.2",
     "prompt-toolkit>=3.0.0",
 ]
 keywords = ["ifc", "bim", "ifcopenshell", "shell", "cli"]
@@ -19,7 +19,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: GPLv3 License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
