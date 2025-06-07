@@ -371,8 +371,8 @@ IfcWall, material=concrete
 IfcElement, location="Level 3"
 IfcWall, type=WT-200mm
 
-# Comparisons
-IfcSlab, Qto_SlabBaseQuantities.NetArea > 100
+# Comparisons (note that numbers with . need to be quoted)
+IfcSlab, Qto_SlabBaseQuantities.NetArea > "100.0"
 IfcWall, Name != "Wall-01"
 IfcElement, Name *= "Fire"  # Contains "Fire"
 
