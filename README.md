@@ -191,10 +191,10 @@ Available functions include: `upper()`, `lower()`, `title()`, `concat()`, `round
 
 ```bash
 # Find all concrete elements and get quantities
-> IfcWall, IfcSlab, material=concrete ; Name ; type.Name ; Qto_.*Quantities.NetVolume
+> IfcWall, IfcSlab, material=concrete ; Name ; type.Name ; /Qto_.*Quantities/.NetVolume
 
 # Export to file for spreasheet analysis
-echo 'IfcWall, IfcSlab, material=concrete ; Name ; type.Name ; Qto_.*Quantities.NetVolume' | ifcpeek model.ifc > concrete_quantities.csv
+echo 'IfcWall, IfcSlab, material=concrete ; Name ; type.Name ; /Qto_.*Quantities/.NetVolume' | ifcpeek model.ifc > concrete_quantities.csv
 ```
 
 ### Fire Rating Schedule
@@ -214,8 +214,8 @@ echo 'IfcWall, IfcSlab, material=concrete ; Name ; type.Name ; Qto_.*Quantities.
 ### Custom Property Analysis
 
 ```bash
-# Elements with custom manufacturer data
-> IfcElement, /Pset_Manufacturer.*/.* != NULL ; Name ; type.Name ; /Pset_Manufacturer.*/.*
+# Elements with custom manufacturer data (note the two regular expressions separated by a . in the query)
+> IfcElement, /Pset_Manufacturer.*/./.*/ != NULL ; Name ; type.Name ; /Pset_Manufacturer.*/
 ```
 
 ## Production Use
