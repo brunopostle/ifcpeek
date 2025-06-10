@@ -660,6 +660,37 @@ class ValueExtractor:
                 traceback.print_exc(file=sys.stderr)
             return []
 
+    def format_headers_output(self, value_queries: list) -> str:
+        """Format headers for value extraction queries by removing formatting functions."""
+        debug_print(f"Formatting headers for {len(value_queries)} value queries")
+
+        headers = []
+
+        for value_query in value_queries:
+            try:
+                if self.is_formatting_query(value_query):
+                    # Strip formatting functions to get core property name
+                    core_property = self.extract_first_value_query(value_query)
+                    if core_property:
+                        headers.append(core_property)
+                    else:
+                        # Fallback to original query if we can't extract core property
+                        headers.append(value_query)
+                else:
+                    # No formatting functions, use query as-is
+                    headers.append(value_query)
+
+            except Exception as e:
+                debug_print(f"Failed to process header for '{value_query}': {e}")
+                # Fallback to original query
+                headers.append(value_query)
+
+        # Format as tab-separated values (same as data rows)
+        header_line = "\t".join(headers)
+        debug_print(f"Generated header line: {header_line}")
+
+        return header_line
+
     def format_value_output(self, values: list) -> str:
         """Format extracted values for output."""
         try:

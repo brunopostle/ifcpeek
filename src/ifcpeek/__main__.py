@@ -29,6 +29,11 @@ def main() -> None:
         action="store_true",
         help="Force interactive mode even when STDIN/STDOUT are not TTYs (for testing)",
     )
+    parser.add_argument(
+        "--headers",
+        action="store_true",
+        help="Include headers in CSV output for value extraction queries",
+    )
 
     try:
         args = parser.parse_args()
@@ -60,6 +65,7 @@ def main() -> None:
         shell = None
         try:
             shell = IfcPeek(args.ifc_file, force_interactive=args.force_interactive)
+            shell.headers_enabled = args.headers
             shell.run()
 
         except IfcPeekError as e:

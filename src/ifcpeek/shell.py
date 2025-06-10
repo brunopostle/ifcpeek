@@ -32,6 +32,7 @@ class IfcPeek:
         "/exit": "_exit",
         "/quit": "_exit",
         "/debug": "_toggle_debug",
+        "/headers": "_toggle_headers",
     }
 
     def __init__(self, ifc_file_path: str, force_interactive: bool = False) -> None:
@@ -39,6 +40,7 @@ class IfcPeek:
         verbose_print(f"IfcPeek initializing with file: {ifc_file_path}")
 
         self.force_interactive = force_interactive
+        self.headers_enabled = False
         self.value_extractor = ValueExtractor()
 
         # Detect if input is from a pipe/file rather than interactive terminal
@@ -276,6 +278,10 @@ class IfcPeek:
                     print(formatted_line)
                 return
 
+            if self.headers_enabled and value_queries:
+                headers_line = self.value_extractor.format_headers_output(value_queries)
+                print(headers_line)
+
             element_values_matrix = self.value_extractor.process_value_queries(
                 results, value_queries
             )
@@ -345,6 +351,7 @@ COMMANDS:
   /exit       - Exit shell  
   /quit       - Exit shell
   /debug      - Toggle debug mode
+  /headers    - Toggle CSV headers mode
   Ctrl-D      - Exit shell
 
 HISTORY:
@@ -352,7 +359,7 @@ HISTORY:
   Ctrl-R   - Search command history
 
 PIPED INPUT:
-  echo 'IfcWall' | ifcpeek model.ifc     - Process single query from STDIN
+  echo 'IfcWall ; Name ; type.Name' | ifcpeek --headers model.ifc     - Include headers in CSV output
   ifcpeek model.ifc < queries.txt        - Process multiple queries from file
 
 For complete selector syntax details, see IfcOpenShell documentation.
@@ -375,6 +382,13 @@ For complete selector syntax details, see IfcOpenShell documentation.
         else:
             enable_debug()
             print("Debug mode enabled.", file=sys.stderr)
+        return True
+
+    def _toggle_headers(self) -> bool:
+        """Toggle headers mode."""
+        self.headers_enabled = not self.headers_enabled
+        status = "enabled" if self.headers_enabled else "disabled"
+        print(f"Headers mode {status}.", file=sys.stderr)
         return True
 
     def _process_piped_input(self) -> None:
