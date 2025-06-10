@@ -1,9 +1,10 @@
 """
-Final fixed test_context_resolver.py with realistic expectations and proper mocking.
+Fixed test_context_resolver.py that properly mocks the enhanced completion system.
 
-The key insight is that these tests should focus on behavior rather than internal 
-implementation details. The resolver should provide useful completions even when
-exact attribute inspection fails.
+The key changes:
+1. Mock ifcopenshell.util.element.get_psets() to return realistic property set data
+2. Update test expectations to match the enhanced completion behavior
+3. Add tests for the new property set completion features
 """
 
 import pytest
@@ -20,10 +21,16 @@ def mock_cache():
         "Pset_WallCommon",
         "Pset_DoorCommon",
         "Qto_WallBaseQuantities",
+        "Qto_BeamBaseQuantities",
     }
     cache.common_attributes = {"Name", "Description", "GlobalId", "Tag"}
+    cache.properties_by_pset = {
+        "Pset_WallCommon": {"FireRating", "LoadBearing", "ThermalTransmittance"},
+        "Qto_WallBaseQuantities": {"NetArea", "NetVolume", "GrossArea"},
+        "Qto_BeamBaseQuantities": {"GrossSurfaceArea", "Length", "NetVolume"},
+    }
 
-    # FIX: Add the missing model attribute that the resolver expects
+    # Add the missing model attribute that the resolver expects
     cache.model = Mock()
 
     return cache
@@ -110,6 +117,135 @@ class TestBasicPathCompletion:
             assert len(completions) > 0
             assert "Name" in completions
             assert "class" in completions
+
+
+class TestPropertySetNameCompletion:
+    """Test property set name completion - NEW TESTS for enhanced functionality."""
+
+    def test_completes_qto_property_set_names(self, mock_cache):
+        """Test completion of Qto_ property set names."""
+        resolver = DynamicContextResolver(mock_cache)
+
+        mock_element = Mock()
+
+        # Mock get_psets to return realistic property set data
+        mock_psets = {
+            "Qto_BeamBaseQuantities": {
+                "id": 123,
+                "GrossSurfaceArea": 15.5,
+                "Length": 3.0,
+                "NetVolume": 0.45,
+            },
+            "Qto_BeamCommon": {"id": 124, "Status": "New"},
+        }
+
+        with patch(
+            "ifcopenshell.util.selector.filter_elements", return_value=[mock_element]
+        ):
+            with patch("ifcopenshell.util.element.get_psets", return_value=mock_psets):
+                completions = resolver.get_completions_for_path("IfcBeam", "Qto_")
+
+                # Should return matching property set names
+                assert "Qto_BeamBaseQuantities" in completions
+                assert "Qto_BeamCommon" in completions
+                # Should not include non-matching property sets
+                assert "Pset_WallCommon" not in completions
+
+    def test_completes_pset_property_set_names(self, mock_cache):
+        """Test completion of Pset_ property set names."""
+        resolver = DynamicContextResolver(mock_cache)
+
+        mock_element = Mock()
+
+        mock_psets = {
+            "Pset_WallCommon": {"id": 125, "FireRating": "2HR", "LoadBearing": True},
+            "Pset_WallThermal": {"id": 126, "ThermalTransmittance": 0.25},
+        }
+
+        with patch(
+            "ifcopenshell.util.selector.filter_elements", return_value=[mock_element]
+        ):
+            with patch("ifcopenshell.util.element.get_psets", return_value=mock_psets):
+                completions = resolver.get_completions_for_path("IfcWall", "Pset_")
+
+                assert "Pset_WallCommon" in completions
+                assert "Pset_WallThermal" in completions
+
+    def test_falls_back_to_cache_for_property_set_names(self, mock_cache):
+        """Test fallback to cache when dynamic extraction fails."""
+        resolver = DynamicContextResolver(mock_cache)
+
+        mock_element = Mock()
+
+        with patch(
+            "ifcopenshell.util.selector.filter_elements", return_value=[mock_element]
+        ):
+            # Mock get_psets to fail
+            with patch(
+                "ifcopenshell.util.element.get_psets",
+                side_effect=Exception("Mock error"),
+            ):
+                completions = resolver.get_completions_for_path("IfcWall", "Pset_")
+
+                # Should fall back to cached property sets
+                assert "Pset_WallCommon" in completions
+                assert "Pset_DoorCommon" in completions
+
+
+class TestPropertySetPropertyCompletion:
+    """Test property set property completion - NEW TESTS for enhanced functionality."""
+
+    def test_completes_properties_within_property_set(self, mock_cache):
+        """Test completion of properties within a specific property set."""
+        resolver = DynamicContextResolver(mock_cache)
+
+        mock_element = Mock()
+
+        mock_psets = {
+            "Qto_BeamBaseQuantities": {
+                "id": 123,
+                "GrossSurfaceArea": 15.5,
+                "Length": 3.0,
+                "NetVolume": 0.45,
+                "OuterSurfaceArea": 12.0,
+            }
+        }
+
+        with patch(
+            "ifcopenshell.util.selector.filter_elements", return_value=[mock_element]
+        ):
+            with patch("ifcopenshell.util.element.get_psets", return_value=mock_psets):
+                completions = resolver.get_completions_for_path(
+                    "IfcBeam", "Qto_BeamBaseQuantities."
+                )
+
+                # Should return actual properties from the property set
+                assert "GrossSurfaceArea" in completions
+                assert "Length" in completions
+                assert "NetVolume" in completions
+                assert "OuterSurfaceArea" in completions
+                # Should not include the 'id' key
+                assert "id" not in completions
+
+    def test_falls_back_to_cache_for_property_set_properties(self, mock_cache):
+        """Test fallback to cache for property set properties."""
+        resolver = DynamicContextResolver(mock_cache)
+
+        mock_element = Mock()
+
+        with patch(
+            "ifcopenshell.util.selector.filter_elements", return_value=[mock_element]
+        ):
+            # Mock get_psets to return empty result
+            with patch("ifcopenshell.util.element.get_psets", return_value={}):
+                completions = resolver.get_completions_for_path(
+                    "IfcBeam", "Qto_BeamBaseQuantities."
+                )
+
+                # Should fall back to cached properties
+                assert "GrossSurfaceArea" in completions
+                assert "Length" in completions
+                assert "NetVolume" in completions
 
 
 class TestEntityInspection:
@@ -218,41 +354,37 @@ class TestResultInspection:
 
 
 class TestComplexQueryScenarios:
-    """Test complex value path resolution scenarios - focus on behavior, not implementation."""
+    """Test complex value path resolution scenarios - updated for enhanced behavior."""
 
     def test_resolves_property_set_paths(self, mock_cache):
-        """Test resolution of property set paths - focus on providing useful completions."""
+        """Test resolution of property set paths - updated for enhanced completion."""
         resolver = DynamicContextResolver(mock_cache)
 
         mock_element = Mock()
 
-        # Instead of trying to make inspection work perfectly,
-        # focus on what the resolver should provide as useful completions
+        # Mock get_psets to return realistic property set data
+        mock_psets = {
+            "Pset_WallCommon": {
+                "id": 123,
+                "FireRating": "2HR",
+                "ThermalTransmittance": 0.25,
+                "LoadBearing": True,
+            }
+        }
+
         with patch(
             "ifcopenshell.util.selector.filter_elements", return_value=[mock_element]
         ):
-            # Mock get_element_value to return a realistic property set-like object
-            mock_pset = Mock()
-            mock_pset.__dict__ = {"FireRating": "2HR", "ThermalTransmittance": 0.25}
-
-            with patch(
-                "ifcopenshell.util.selector.get_element_value", return_value=mock_pset
-            ):
+            with patch("ifcopenshell.util.element.get_psets", return_value=mock_psets):
+                # Test property set name completion
                 completions = resolver.get_completions_for_path(
                     "IfcWall", "Pset_WallCommon"
                 )
 
-                # The key requirement: should provide useful completions
+                # With enhanced completion, this should return matching property set names
+                # Since "Pset_WallCommon" exactly matches a property set, it should be returned
                 assert len(completions) > 0
-
-                # Should always include selector keywords as fallback
-                assert len(completions.intersection(mock_cache.selector_keywords)) > 0
-
-                # Should include common attributes as fallback
-                assert len(completions.intersection(mock_cache.common_attributes)) > 0
-
-                # If attribute inspection works, that's a bonus, but not required
-                # The important thing is that users get useful suggestions
+                assert "Pset_WallCommon" in completions
 
     def test_resolves_nested_object_paths(self, mock_cache):
         """Test resolution of deeply nested object paths - focus on not crashing."""
@@ -417,3 +549,40 @@ class TestErrorHandlingAndRecovery:
                 # Should provide at least some fallback completions
                 if path == "":  # Empty path should work normally
                     assert len(completions) > 0
+
+    def test_handles_property_set_extraction_failure(self, mock_cache):
+        """Test handling when property set extraction fails - NEW TEST."""
+        resolver = DynamicContextResolver(mock_cache)
+
+        mock_element = Mock()
+
+        with patch(
+            "ifcopenshell.util.selector.filter_elements", return_value=[mock_element]
+        ):
+            # Mock get_psets to fail
+            with patch(
+                "ifcopenshell.util.element.get_psets",
+                side_effect=Exception("Property set extraction failed"),
+            ):
+                # Test property set name completion
+                completions = resolver.get_completions_for_path("IfcWall", "Pset_")
+
+                # Should fall back to cached property sets
+                assert len(completions) > 0
+                cached_psets = {
+                    name
+                    for name in mock_cache.property_sets
+                    if name.startswith("Pset_")
+                }
+                assert len(completions.intersection(cached_psets)) > 0
+
+                # Test property set property completion
+                completions = resolver.get_completions_for_path(
+                    "IfcWall", "Pset_WallCommon."
+                )
+
+                # Should fall back to cached properties
+                assert len(completions) > 0
+                assert "FireRating" in completions  # From cache
+                assert "LoadBearing" in completions
+                assert "ThermalTransmittance" in completions

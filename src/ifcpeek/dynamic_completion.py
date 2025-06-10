@@ -5,19 +5,21 @@ Reduced from 800+ lines to ~300 lines by removing duplicate cache code.
 """
 
 import re
+import sys
 from typing import Dict, Set, Any
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
 import ifcopenshell
 import ifcopenshell.util.selector
+import ifcopenshell.util.element
 from .completion_cache import DynamicIfcCompletionCache
 from .debug import debug_print
 
 
 class FilterQueryCompleter(Completer):
-    """Tab completer for IFC selector filter queries (before semicolon)."""
+    """Fixed filter query completer with proper property set support."""
 
-    def __init__(self, cache: DynamicIfcCompletionCache):
+    def __init__(self, cache):
         self.cache = cache
 
     def get_completions(self, document: Document, complete_event):
@@ -61,75 +63,180 @@ class FilterQueryCompleter(Completer):
         debug_print(f"FilterQueryCompleter: Yielded {yielded_count} completions")
 
     def _parse_current_word(self, text_before_cursor: str) -> tuple:
-        """Parse current word and start position with proper negation handling."""
+        """Parse current word and start position with proper handling."""
         current_word = ""
         start_position = 0
 
+        # Check for comparison patterns first (after = > < etc.)
         comparison_match = re.search(
             r"(\w+)\s*(>=|<=|!=|\*=|!\*=|>|<|=)\s*(.*)$", text_before_cursor
         )
         if comparison_match:
-            # We're after a comparison operator
             partial_value = comparison_match.group(3)  # What comes after the operator
             current_word = partial_value
             start_position = -len(partial_value) if partial_value else 0
+            debug_print(
+                f"Parsed comparison: current_word='{current_word}', start_position={start_position}"
+            )
             return current_word, start_position
-        else:
-            # Handle negation patterns first, then fall back to original logic
 
-            # Pattern 1: "! Ifc" or "! IfcW" (space after !)
-            space_negation = re.search(r"!\s+([A-Za-z]*)$", text_before_cursor)
-            if space_negation:
-                current_word = space_negation.group(1)
-                start_position = -len(current_word) if current_word else 0
-                return current_word, start_position
+        # Check for property set completion patterns
+        # Pattern: "IfcClass, PropertySet."
+        pset_dot_pattern = r"(Ifc[A-Za-z0-9]+)\s*,\s*([A-Za-z0-9_]+)\.\s*$"
+        pset_dot_match = re.search(pset_dot_pattern, text_before_cursor)
+        if pset_dot_match:
+            debug_print("Parsed property set dot pattern")
+            current_word = ""
+            start_position = 0
+            return current_word, start_position
 
-            # Pattern 2: "!Ifc" or "!IfcW" (no space after !)
-            no_space_negation = re.search(r"!([A-Za-z]+)$", text_before_cursor)
-            if no_space_negation:
-                current_word = no_space_negation.group(1)
-                start_position = -len(current_word)
-                return current_word, start_position
+        # Handle negation patterns
+        space_negation = re.search(r"!\s+([A-Za-z]*)$", text_before_cursor)
+        if space_negation:
+            current_word = space_negation.group(1)
+            start_position = -len(current_word) if current_word else 0
+            return current_word, start_position
 
-            # Pattern 3: Just "!" - ready to complete
-            if text_before_cursor.endswith("!"):
-                current_word = ""
-                start_position = 0  # Don't replace anything, just add after
-                return current_word, start_position
+        no_space_negation = re.search(r"!([A-Za-z]+)$", text_before_cursor)
+        if no_space_negation:
+            current_word = no_space_negation.group(1)
+            start_position = -len(current_word)
+            return current_word, start_position
 
-            # Pattern 4: "! " (bang + space) - ready to complete
-            if re.search(r"!\s+$", text_before_cursor):
-                current_word = ""
-                start_position = 0  # Don't replace anything, just add after
-                return current_word, start_position
+        if text_before_cursor.endswith("!") or re.search(r"!\s+$", text_before_cursor):
+            current_word = ""
+            start_position = 0
+            return current_word, start_position
 
-            # Original logic for non-negation cases
-            word_match = re.search(r"[^,+\s]*$", text_before_cursor)
-            if word_match:
-                current_word = word_match.group()
-                start_position = -len(current_word) if current_word else 0
+        # Default word parsing
+        word_match = re.search(r"[^,+\s]*$", text_before_cursor)
+        if word_match:
+            current_word = word_match.group()
+            start_position = -len(current_word) if current_word else 0
 
         return current_word, start_position
 
     def _get_contextual_completions(
         self, text_before_cursor: str, current_word: str
     ) -> Set[str]:
-        """Get contextual completions based on the current position in the filter query.
-
-        Updated to include negation support.
-        """
+        """Enhanced to handle all property set completion scenarios - FIXED basic completion regression."""
         completions = set()
 
-        # NEW: Check if we're in a negation context
+        debug_print(f"Getting contextual completions for: '{text_before_cursor}'")
+
+        # Check if we're in a negation context first
         if re.search(r"!\s*[A-Za-z]*$", text_before_cursor):
-            # We're completing after '!' - suggest IFC classes that can be negated
             completions.update(self.cache.ifc_classes_in_model)
             return completions
 
-        # Original contextual completion logic
-        context = self._analyze_filter_context(text_before_cursor)
+        # Check for property set name completion in filter context
+        # Pattern: "IfcClass, Qto_" or "IfcClass, Pset_"
+        pset_name_pattern = r"(Ifc[A-Za-z0-9]+)\s*,\s*([PQE][a-zA-Z0-9_]*)\s*$"
+        pset_name_match = re.search(pset_name_pattern, text_before_cursor)
 
-        debug_print(f"Context for '{text_before_cursor}': {context}")
+        if pset_name_match:
+            ifc_class = pset_name_match.group(1)
+            pset_prefix = pset_name_match.group(2)
+            debug_print(
+                f"Detected filter property set name completion: {ifc_class}, {pset_prefix}"
+            )
+
+            matching_psets = self._get_filter_matching_property_set_names(
+                ifc_class, pset_prefix
+            )
+            if matching_psets:
+                completions.update(matching_psets)
+                debug_print(
+                    f"Found {len(matching_psets)} matching property sets for filter"
+                )
+                return completions
+
+        # Check for property set property completion pattern
+        # Pattern: "IfcClass, Pset_Name." or "IfcClass, Qto_Name."
+        pset_completion_pattern = r"(Ifc[A-Za-z0-9]+)\s*,\s*([PQE][a-zA-Z0-9_]+)\.\s*$"
+        pset_match = re.search(pset_completion_pattern, text_before_cursor)
+
+        if pset_match:
+            ifc_class = pset_match.group(1)
+            pset_name = pset_match.group(2)
+            debug_print(
+                f"Detected property set property completion: {ifc_class}, {pset_name}."
+            )
+
+            pset_properties = self._get_filter_property_set_properties(
+                ifc_class, pset_name
+            )
+            if pset_properties:
+                completions.update(pset_properties)
+                debug_print(f"Found {len(pset_properties)} properties for {pset_name}")
+                return completions
+
+        # Check for value completion (after comparison operators)
+        value_pattern = r"(\w+)\s*(>=|<=|!=|\*=|!\*=|>|<|=)\s*(.*)$"
+        value_match = re.search(value_pattern, text_before_cursor)
+
+        if value_match:
+            attribute = value_match.group(1)
+            operator = value_match.group(2)
+            debug_print(
+                f"Detected value completion: attr='{attribute}', op='{operator}'"
+            )
+
+            values = self._get_values_for_filter_context(text_before_cursor, attribute)
+            if values:
+                completions.update(values)
+                debug_print(f"Found {len(values)} values for {attribute}")
+                return completions
+
+        # REGRESSION FIX 2: Enhanced basic completion after comma
+        # Check for basic completion after "IfcClass, " pattern
+        basic_completion_pattern = r"(Ifc[A-Za-z0-9]+)\s*,\s*$"
+        basic_match = re.search(basic_completion_pattern, text_before_cursor)
+
+        if basic_match:
+            ifc_class = basic_match.group(1)
+            debug_print(f"Detected basic completion after: {ifc_class}, ")
+
+            # Add IFC classes (for union queries like "IfcWall, IfcSlab")
+            completions.update(self.cache.ifc_classes_in_model)
+
+            # Add filter keywords
+            completions.update(self.cache.filter_keywords)
+
+            # Add class-specific attributes
+            relevant_classes = {ifc_class}
+            class_attributes = self.cache.get_attributes_for_classes(relevant_classes)
+            completions.update(class_attributes)
+
+            # Add property set prefixes
+            completions.add("Pset_")
+            completions.add("/Pset_.*Common/")
+            completions.add("Qto_")
+            completions.add("/Qto_.*/")
+
+            # Add actual property sets that exist for this class
+            try:
+                elements = ifcopenshell.util.selector.filter_elements(
+                    self.cache.model, ifc_class
+                )
+                if elements:
+                    sample_elements = list(elements)[:3]
+                    for element in sample_elements:
+                        try:
+                            all_psets = ifcopenshell.util.element.get_psets(element)
+                            for pset_name in all_psets.keys():
+                                completions.add(pset_name)
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
+            debug_print(f"Basic completion: added {len(completions)} completions")
+            return completions
+
+        # Original contextual completion logic for other cases
+        context = self._analyze_filter_context(text_before_cursor)
+        debug_print(f"Context analysis: {context}")
 
         if context["expecting_value"]:
             values = self._get_values_for_context(context, text_before_cursor)
@@ -165,8 +272,287 @@ class FilterQueryCompleter(Completer):
 
         return completions
 
+    def _get_filter_property_set_properties(
+        self, ifc_class: str, pset_name: str
+    ) -> Set[str]:
+        """Get properties for a property set in filter context."""
+        debug_print(f"Getting filter properties for {ifc_class}.{pset_name}")
+
+        properties = set()
+
+        try:
+            # Get elements of the specified IFC class
+            elements = ifcopenshell.util.selector.filter_elements(
+                self.cache.model, ifc_class
+            )
+
+            if not elements:
+                debug_print(f"No {ifc_class} elements found in model")
+                return self._get_cached_property_set_properties(pset_name)
+
+            # Sample a few elements
+            sample_elements = list(elements)[:5]
+            debug_print(f"Sampling {len(sample_elements)} {ifc_class} elements")
+
+            for element in sample_elements:
+                try:
+                    # Get all property sets for this element
+                    all_psets = ifcopenshell.util.element.get_psets(element)
+
+                    if pset_name in all_psets:
+                        pset_data = all_psets[pset_name]
+                        debug_print(
+                            f"Found {pset_name} with properties: {list(pset_data.keys())}"
+                        )
+
+                        for prop_name in pset_data.keys():
+                            if prop_name != "id":
+                                properties.add(prop_name)
+                                debug_print(f"Added filter property: {prop_name}")
+
+                except Exception as e:
+                    debug_print(f"Failed to get property sets for element: {e}")
+                    continue
+
+            if properties:
+                debug_print(
+                    f"Found {len(properties)} filter properties in {pset_name}: {sorted(properties)}"
+                )
+                return properties
+            else:
+                debug_print(f"No filter properties found for {pset_name}, trying cache")
+                return self._get_cached_property_set_properties(pset_name)
+
+        except Exception as e:
+            debug_print(f"Error getting filter property set properties: {e}")
+            return self._get_cached_property_set_properties(pset_name)
+
+    def _get_filter_matching_property_set_names(
+        self, ifc_class: str, prefix: str
+    ) -> Set[str]:
+        """Get property set names matching prefix for filter queries."""
+        debug_print(
+            f"Getting filter property set names for {ifc_class} matching '{prefix}'"
+        )
+
+        matching_names = set()
+
+        try:
+            elements = ifcopenshell.util.selector.filter_elements(
+                self.cache.model, ifc_class
+            )
+
+            if not elements:
+                debug_print(f"No {ifc_class} elements found in model")
+                cached_matches = {
+                    name for name in self.cache.property_sets if name.startswith(prefix)
+                }
+                return cached_matches
+
+            sample_elements = list(elements)[:5]
+            debug_print(f"Sampling {len(sample_elements)} {ifc_class} elements")
+
+            for element in sample_elements:
+                try:
+                    all_psets = ifcopenshell.util.element.get_psets(element)
+
+                    for pset_name in all_psets.keys():
+                        if pset_name.startswith(prefix):
+                            matching_names.add(pset_name)
+                            debug_print(
+                                f"Found matching filter property set: {pset_name}"
+                            )
+
+                except Exception as e:
+                    debug_print(f"Failed to get property sets for element: {e}")
+                    continue
+
+            debug_print(
+                f"Found {len(matching_names)} matching filter property sets: {sorted(matching_names)}"
+            )
+            return matching_names
+
+        except Exception as e:
+            debug_print(f"Error getting filter property set names: {e}")
+            cached_matches = {
+                name for name in self.cache.property_sets if name.startswith(prefix)
+            }
+            return cached_matches
+
+    def _get_cached_property_set_properties(self, pset_name: str) -> Set[str]:
+        """Get properties from the cache for a property set."""
+        if (
+            hasattr(self.cache, "properties_by_pset")
+            and pset_name in self.cache.properties_by_pset
+        ):
+            cached_props = self.cache.properties_by_pset[pset_name]
+            debug_print(f"Using cached properties for {pset_name}: {cached_props}")
+            return cached_props
+        else:
+            debug_print(f"No cached properties found for {pset_name}")
+            return set()
+
+    def _get_values_for_filter_context(
+        self, text_before_cursor: str, attribute: str
+    ) -> Set[str]:
+        """Get values for filter context - FIX: Check boolean type FIRST."""
+        debug_print(f"Getting values for filter context: attribute='{attribute}'")
+
+        values = set()
+
+        try:
+            # Parse the full query to understand the context
+            # Extract IFC class
+            parts = text_before_cursor.split(",")
+            if not parts:
+                debug_print("No parts found in text")
+                return set()
+
+            class_part = parts[0].strip()
+            ifc_match = re.search(r"\b(Ifc[A-Za-z0-9]+)\b", class_part)
+
+            if not ifc_match:
+                debug_print(f"No IFC class found in '{class_part}'")
+                return set()
+
+            ifc_class = ifc_match.group(1)
+            debug_print(f"Extracted IFC class: {ifc_class}")
+
+            # Extract the full attribute path
+            full_attr_match = re.search(
+                r",\s*([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\s*[>=<!]", text_before_cursor
+            )
+
+            if full_attr_match:
+                full_attribute_path = full_attr_match.group(1)
+                debug_print(f"Found full attribute path: {full_attribute_path}")
+            else:
+                # Fallback: if it's just the property name, try common mappings
+                full_attribute_path = self._map_attribute_to_query_path(
+                    attribute, text_before_cursor
+                )
+                debug_print(
+                    f"Mapped attribute to path: {attribute} -> {full_attribute_path}"
+                )
+
+            # Get elements
+            elements = ifcopenshell.util.selector.filter_elements(
+                self.cache.model, ifc_class
+            )
+            debug_print(f"Found {len(elements)} {ifc_class} elements")
+
+            if not elements:
+                return set()
+
+            # Sample ALL elements to find boolean values
+            all_elements = list(elements)
+            debug_print(
+                f"Sampling ALL {len(all_elements)} elements to find property values"
+            )
+
+            found_boolean = False
+            values_with_data = 0
+
+            for i, element in enumerate(all_elements):
+                try:
+                    # Try to extract the value using the full attribute path
+                    value = ifcopenshell.util.selector.get_element_value(
+                        element, full_attribute_path
+                    )
+
+                    if value is not None:
+                        values_with_data += 1
+
+                        # Log first few values for debugging
+                        if values_with_data <= 5:
+                            debug_print(
+                                f"Element {i}: {full_attribute_path} = {value} (type: {type(value)})"
+                            )
+
+                        # FIX: Check boolean type FIRST before other types
+                        if isinstance(value, bool):
+                            if not found_boolean:  # Only log once
+                                debug_print(
+                                    f"BOOLEAN DETECTION: Found boolean value {value} at element {i}"
+                                )
+                            found_boolean = True
+                            # Don't add to values yet - we'll handle this at the end
+                        elif isinstance(value, str) and value.strip():
+                            quoted_value = f'"{value.strip()}"'
+                            values.add(quoted_value)
+                            debug_print(f"Added string value: {quoted_value}")
+                        elif isinstance(value, (int, float)):
+                            quoted_value = f'"{str(value)}"'
+                            values.add(quoted_value)
+                            debug_print(f"Added numeric value: {quoted_value}")
+                        else:
+                            debug_print(f"Unknown value type: {type(value)} = {value}")
+
+                except Exception as e:
+                    # Only log first few failures to avoid spam
+                    if i < 3:
+                        debug_print(f"Element {i}: extraction failed: {e}")
+                    continue
+
+            debug_print(
+                f"Sampling complete: found_boolean = {found_boolean}, values_with_data = {values_with_data}"
+            )
+            debug_print(f"Values collected before boolean check: {values}")
+
+            # If we found ANY boolean values, this is a boolean property
+            if found_boolean:
+                debug_print(
+                    "BOOLEAN DETECTION SUCCESS: Clearing other values and offering TRUE/FALSE"
+                )
+                values.clear()  # Clear any other values
+                values.add("TRUE")
+                values.add("FALSE")
+                debug_print("Added TRUE and FALSE options")
+                return values
+
+            # Return whatever non-boolean values we found
+            debug_print(f"Final non-boolean values: {list(values)}")
+            return values
+
+        except Exception as e:
+            debug_print(f"Error in value extraction: {e}")
+            import traceback
+
+            traceback.print_exc(file=sys.stderr)
+            return set()
+
+    def _map_attribute_to_query_path(
+        self, attribute: str, text_before_cursor: str
+    ) -> str:
+        """Map simple attribute names to full query paths based on context."""
+
+        # Check if we're in a property set context
+        # Look for pattern like "IfcBeam, Qto_BeamBaseQuantities.Length"
+        pset_attr_match = re.search(
+            r",\s*([A-Za-z0-9_]+)\." + re.escape(attribute), text_before_cursor
+        )
+
+        if pset_attr_match:
+            pset_name = pset_attr_match.group(1)
+            full_path = f"{pset_name}.{attribute}"
+            debug_print(f"Mapped to property set path: {full_path}")
+            return full_path
+
+        # Default mappings for common attributes
+        attribute_mappings = {
+            "material": "material.Name",
+            "type": "type.Name",
+            "location": "storey.Name",
+            "parent": "container.Name",
+            "classification": "classification.Identification",
+        }
+
+        mapped_path = attribute_mappings.get(attribute, attribute)
+        debug_print(f"Mapped to default path: {attribute} -> {mapped_path}")
+        return mapped_path
+
     def _analyze_filter_context(self, text: str) -> Dict[str, Any]:
-        """Analyze the current context in a filter query."""
+        """Enhanced context analysis to handle property set patterns better."""
         context = {
             "expecting_class": False,
             "expecting_attribute_or_keyword": False,
@@ -183,6 +569,17 @@ class FilterQueryCompleter(Completer):
             context["expecting_class"] = True
             return context
 
+        # Check for property set pattern with dot: "IfcClass, Pset_Name."
+        pset_dot_pattern = r"(Ifc[A-Za-z0-9]+)\s*,\s*([PQE][a-zA-Z0-9_]+)\.\s*$"
+        pset_dot_match = re.search(pset_dot_pattern, text)
+        if pset_dot_match:
+            context["expecting_property_name"] = True
+            context["current_pset"] = pset_dot_match.group(2)
+            debug_print(
+                f"Context: expecting property name for {context['current_pset']}"
+            )
+            return context
+
         # Check for value completion (after '=', '>' etc..)
         comparison_match = re.search(
             r"(\w+)\s*(>=|<=|!=|\*=|!\*=|>|<|=)\s*(.*?)$", text
@@ -191,9 +588,7 @@ class FilterQueryCompleter(Completer):
         if comparison_match:
             context["expecting_value"] = True
             context["current_attribute"] = comparison_match.group(1)
-            context["partial_value"] = comparison_match.group(
-                3
-            )  # The part after operator
+            context["partial_value"] = comparison_match.group(3)
             return context
 
         # Pattern: "IfcClass, PartialWord" where PartialWord could be partial attribute
@@ -202,10 +597,6 @@ class FilterQueryCompleter(Completer):
         if ifc_comma_match:
             word_after_comma = ifc_comma_match.group(1)
 
-            # Determine if this is a complete attribute (expecting comparison)
-            # or partial attribute (expecting completion)
-
-            # Known complete filter keywords that should expect comparison
             complete_keywords = {
                 "material",
                 "type",
@@ -216,11 +607,9 @@ class FilterQueryCompleter(Completer):
             }
 
             if word_after_comma in complete_keywords:
-                # This is a complete word - expect comparison operator
                 context["expecting_comparison"] = True
                 context["current_attribute"] = word_after_comma
             else:
-                # This is likely a partial word - expect attribute/keyword completion
                 context["expecting_attribute_or_keyword"] = True
 
             return context
@@ -230,7 +619,7 @@ class FilterQueryCompleter(Completer):
             context["expecting_attribute_or_keyword"] = True
             return context
 
-        # Check for comparison operator expectation (original logic)
+        # Check for comparison operator expectation
         attr_match = re.search(r"([^,+\s=]+)\s*$", text)
         if attr_match and not text.endswith(",") and not text.endswith("+"):
             possible_attr = attr_match.group(1)
@@ -262,7 +651,6 @@ class FilterQueryCompleter(Completer):
         elif last_segment.endswith("."):
             context["expecting_property_name"] = True
             pset_candidate = last_segment[:-1]
-            # Note: You may need to check against self.cache.property_sets here
             context["current_pset"] = pset_candidate
         else:
             context["expecting_attribute_or_keyword"] = True
@@ -272,7 +660,7 @@ class FilterQueryCompleter(Completer):
     def _get_values_for_context(
         self, context: Dict[str, Any], text_before_cursor: str = ""
     ) -> Set[str]:
-        """Get values with targeted class extraction."""
+        """Get values with targeted class extraction - Simplified without heuristics."""
         if not context.get("current_attribute"):
             debug_print("_get_values_for_context: No current_attribute in context")
             return set()
@@ -285,6 +673,20 @@ class FilterQueryCompleter(Completer):
         target_class = self._extract_target_class(text_before_cursor)
         if not target_class:
             debug_print("_get_values_for_context: No target class found")
+
+            # Try extracting from the context again
+            parts = text_before_cursor.split(",")
+            if parts:
+                class_part = parts[0].strip()
+                ifc_match = re.search(r"\b(Ifc[A-Za-z0-9]+)\b", class_part)
+                if ifc_match:
+                    target_class = ifc_match.group(1)
+                    debug_print(
+                        f"_get_values_for_context: Retry found class: {target_class}"
+                    )
+
+        if not target_class:
+            debug_print("_get_values_for_context: Still no target class found")
             return set()
 
         debug_print(f"_get_values_for_context: Target class: {target_class}")
@@ -331,28 +733,26 @@ class FilterQueryCompleter(Completer):
     def _get_values_from_target_class(
         self, target_class: str, attribute_name: str
     ) -> Set[str]:
-        """Get values from a specific IFC class with automatic quoting for all strings."""
+        """Get values from a specific IFC class - FIX: Check boolean type FIRST."""
         debug_print(
             f"_get_values_from_target_class: Getting values for {target_class}.{attribute_name}"
         )
 
         try:
-            entities = ifcopenshell.util.selector.filter_elements(
+            elements = ifcopenshell.util.selector.filter_elements(
                 self.cache.model, target_class
             )
 
-            if not entities:
+            if not elements:
                 debug_print(
                     f"_get_values_from_target_class: No {target_class} entities found in model"
                 )
                 return set()
 
-            entity_list = list(entities)
-            sample_size = min(20, len(entity_list))  # Reduced sample size
-            sample_entities = entity_list[:sample_size]
-
+            # Process ALL elements
+            all_elements = list(elements)
             debug_print(
-                f"_get_values_from_target_class: Processing {len(sample_entities)} of {len(entity_list)} {target_class} entities"
+                f"_get_values_from_target_class: Processing ALL {len(all_elements)} {target_class} entities"
             )
 
             value_query = self._get_value_query_for_attribute(attribute_name)
@@ -362,33 +762,61 @@ class FilterQueryCompleter(Completer):
 
             values = set()
             successful_extractions = 0
+            found_boolean = False
 
-            for i, entity in enumerate(sample_entities):
+            for i, entity in enumerate(all_elements):
                 try:
                     value = ifcopenshell.util.selector.get_element_value(
                         entity, value_query
                     )
                     if value is not None:
-                        if isinstance(value, str) and value.strip():
+                        successful_extractions += 1
+
+                        # Log first few values for debugging
+                        if successful_extractions <= 5:
+                            debug_print(
+                                f"Entity {i}: {value_query} = {value} (type: {type(value)})"
+                            )
+
+                        # FIX: Check boolean type FIRST before other types
+                        if isinstance(value, bool):
+                            if not found_boolean:  # Only log once
+                                debug_print(
+                                    f"BOOLEAN DETECTION: Found boolean value {value} at entity {i}"
+                                )
+                            found_boolean = True
+                            # Don't add to values yet - we'll handle this at the end
+                        elif isinstance(value, str) and value.strip():
                             clean_value = value.strip()
-                            if len(clean_value) <= 50:  # Reduced length limit
+                            if len(clean_value) <= 50:
                                 quoted_value = f'"{clean_value}"'
                                 values.add(quoted_value)
-                                successful_extractions += 1
-                        elif isinstance(value, (int, float, bool)):
+                        elif isinstance(value, (int, float)):
                             quoted_value = f'"{str(value)}"'
                             values.add(quoted_value)
-                            successful_extractions += 1
+
                 except Exception as e:
-                    if i < 3:  # Only log first few failures
+                    # Only log first few failures to avoid spam
+                    if i < 3:
                         debug_print(
                             f"_get_values_from_target_class: Failed to extract from entity {i}: {e}"
                         )
                     continue
 
             debug_print(
-                f"_get_values_from_target_class: Successfully extracted {successful_extractions} values, {len(values)} unique"
+                f"_get_values_from_target_class: found_boolean = {found_boolean}, successful_extractions = {successful_extractions}"
             )
+
+            # If we found ANY boolean values, this is a boolean property
+            if found_boolean:
+                debug_print(
+                    "BOOLEAN DETECTION SUCCESS: Clearing other values and offering TRUE/FALSE"
+                )
+                values.clear()  # Clear any other values
+                values.add("TRUE")
+                values.add("FALSE")
+
+            debug_print(f"_get_values_from_target_class: Final values: {list(values)}")
             return values
 
         except Exception as e:
@@ -432,10 +860,7 @@ class DynamicContextResolver:
         self.cache = cache
 
     def get_completions_for_path(self, filter_query: str, value_path: str) -> Set[str]:
-        """Get completions by executing the path and inspecting actual results.
-
-        This method should work correctly for real IFC models and during testing.
-        """
+        """Get completions by executing the path and inspecting actual results."""
         debug_print(f"get_completions_for_path: '{filter_query}' + '{value_path}'")
 
         try:
@@ -455,8 +880,71 @@ class DynamicContextResolver:
             path_parts = value_path.split(".")
             debug_print(f"Path parts: {path_parts}")
 
+            # Handle property set name completion
+            # Case: "Qto_", "Pset_", "EPset_" (partial property set names)
+            if len(path_parts) == 1 and (
+                value_path.startswith("Qto_")
+                or value_path.startswith("Pset_")
+                or value_path.startswith("EPset_")
+            ):
+
+                debug_print(
+                    f"Detected property set name completion for: '{value_path}'"
+                )
+                matching_psets = self._get_matching_property_set_names(
+                    sample_elements, value_path
+                )
+
+                if matching_psets:
+                    debug_print(f"Found {len(matching_psets)} matching property sets")
+                    return matching_psets
+                else:
+                    debug_print(
+                        "No matching property sets found, trying cache fallback"
+                    )
+                    # Fallback to cached property sets
+                    cached_matches = {
+                        name
+                        for name in self.cache.property_sets
+                        if name.startswith(value_path)
+                    }
+                    if cached_matches:
+                        return cached_matches
+
+            # Handle property set completion specifically
+            elif len(path_parts) == 2 and path_parts[1] == "":
+                # Case: "Qto_BeamBaseQuantities." (with trailing dot)
+                pset_name = path_parts[0]
+                debug_print(
+                    f"Detected property set property completion for: {pset_name}"
+                )
+                return self._get_property_set_properties(sample_elements, pset_name)
+
+            elif len(path_parts) == 1 and (
+                value_path.startswith("Pset_")
+                or value_path.startswith("Qto_")
+                or value_path.startswith("EPset_")
+            ):
+                # Case: "Qto_BeamBaseQuantities" (no trailing dot yet)
+                # Check if this is a complete property set name
+                debug_print(
+                    f"Checking if '{value_path}' is a complete property set name"
+                )
+
+                complete_pset_names = self._find_complete_property_set_names(
+                    sample_elements, value_path
+                )
+                if complete_pset_names:
+                    # Return property set names that match the prefix
+                    return complete_pset_names
+                else:
+                    # Try to get properties for this property set name
+                    return self._get_property_set_properties(
+                        sample_elements, value_path
+                    )
+
             # Handle simple paths (no dots or single component)
-            if len(path_parts) <= 1:
+            elif len(path_parts) <= 1:
                 debug_print("Single-part path, inspecting elements directly")
                 for element in sample_elements:
                     attrs = self._get_entity_attributes(element)
@@ -472,50 +960,140 @@ class DynamicContextResolver:
                 return all_attributes
 
             # Handle complex paths (material.item, type.Name, etc.)
-            partial_path = ".".join(path_parts[:-1])
-            debug_print(f"Multi-part path, extracting: '{partial_path}'")
-
-            # Extract values from each element using the partial path
-            for i, element in enumerate(sample_elements):
-                try:
-                    # This extracts the value at the partial path
-                    # For "material.item", this extracts the "material" value
-                    result = ifcopenshell.util.selector.get_element_value(
-                        element, partial_path
-                    )
-                    debug_print(
-                        f"Element {i}: extracted {type(result)} from '{partial_path}'"
-                    )
-
-                    if result is not None:
-                        # Inspect what attributes/indices are available on this result
-                        # This is where list detection needs to work correctly
-                        attrs = self._inspect_result(result)
-                        all_attributes.update(attrs)
-                        debug_print(f"Element {i}: added {len(attrs)} attributes")
-
-                except Exception as e:
-                    debug_print(f"Element {i}: extraction failed: {e}")
-                    continue
-
-            # Return results or fallback
-            if all_attributes:
-                debug_print(f"Multi-part result: {len(all_attributes)} attributes")
-                return all_attributes
             else:
-                debug_print("No attributes found, using fallback")
-                return self._get_fallback_completions()
+                partial_path = ".".join(path_parts[:-1])
+                debug_print(f"Multi-part path, extracting: '{partial_path}'")
+
+                # Extract values from each element using the partial path
+                for i, element in enumerate(sample_elements):
+                    try:
+                        result = ifcopenshell.util.selector.get_element_value(
+                            element, partial_path
+                        )
+                        debug_print(
+                            f"Element {i}: extracted {type(result)} from '{partial_path}'"
+                        )
+
+                        if result is not None:
+                            attrs = self._inspect_result(result)
+                            all_attributes.update(attrs)
+                            debug_print(f"Element {i}: added {len(attrs)} attributes")
+
+                    except Exception as e:
+                        debug_print(f"Element {i}: extraction failed: {e}")
+                        continue
+
+                # Return results or fallback
+                if all_attributes:
+                    debug_print(f"Multi-part result: {len(all_attributes)} attributes")
+                    return all_attributes
+                else:
+                    debug_print("No attributes found, using fallback")
+                    return self._get_fallback_completions()
 
         except Exception as e:
             debug_print(f"Error in get_completions_for_path: {e}")
             return self._get_fallback_completions()
 
-    def _inspect_result(self, result: Any) -> Set[str]:
-        """Inspect a result object to determine what attributes/indices are available.
+    def _get_property_set_properties(self, elements: list, pset_name: str) -> Set[str]:
+        """Extract actual properties from a specific property set in the elements."""
+        debug_print(f"Getting properties for property set: {pset_name}")
 
-        This method should correctly handle both IFC entities and list results in normal usage.
-        The test failure indicates that list detection isn't working properly.
-        """
+        properties = set()
+
+        for element in elements:
+            try:
+                import ifcopenshell.util.element
+
+                all_psets = ifcopenshell.util.element.get_psets(element)
+                debug_print(
+                    f"Element #{getattr(element, 'id', lambda: 'Unknown')()} has psets: {list(all_psets.keys())}"
+                )
+
+                if pset_name in all_psets:
+                    pset_data = all_psets[pset_name]
+                    debug_print(
+                        f"Found {pset_name} with properties: {list(pset_data.keys())}"
+                    )
+
+                    for prop_name in pset_data.keys():
+                        if prop_name != "id":
+                            properties.add(prop_name)
+                            debug_print(f"Added property: {prop_name}")
+
+            except Exception as e:
+                debug_print(f"Failed to get property sets for element: {e}")
+                continue
+
+        if properties:
+            debug_print(
+                f"Found {len(properties)} properties in {pset_name}: {sorted(properties)}"
+            )
+        else:
+            debug_print(f"No properties found for {pset_name}")
+            if pset_name in self.cache.properties_by_pset:
+                cached_props = self.cache.properties_by_pset[pset_name]
+                debug_print(f"Using cached properties for {pset_name}: {cached_props}")
+                properties.update(cached_props)
+
+        return properties
+
+    def _get_matching_property_set_names(self, elements: list, prefix: str) -> Set[str]:
+        """Get property set names that match the given prefix."""
+        debug_print(f"Getting property set names matching prefix: '{prefix}'")
+
+        matching_names = set()
+
+        for element in elements:
+            try:
+                import ifcopenshell.util.element
+
+                all_psets = ifcopenshell.util.element.get_psets(element)
+                element_id = getattr(element, "id", lambda: "Unknown")()
+                debug_print(f"Element #{element_id} has {len(all_psets)} property sets")
+
+                for pset_name in all_psets.keys():
+                    if pset_name.startswith(prefix):
+                        matching_names.add(pset_name)
+                        debug_print(f"Found matching property set: {pset_name}")
+
+            except Exception as e:
+                debug_print(f"Failed to get property sets for element: {e}")
+                continue
+
+        debug_print(
+            f"Found {len(matching_names)} matching property set names: {sorted(matching_names)}"
+        )
+        return matching_names
+
+    def _find_complete_property_set_names(
+        self, elements: list, prefix: str
+    ) -> Set[str]:
+        """Find property set names that match the given prefix."""
+        debug_print(f"Finding property set names with prefix: {prefix}")
+
+        matching_names = set()
+
+        for element in elements:
+            try:
+                import ifcopenshell.util.element
+
+                all_psets = ifcopenshell.util.element.get_psets(element)
+
+                for pset_name in all_psets.keys():
+                    if pset_name.startswith(prefix):
+                        matching_names.add(pset_name)
+                        debug_print(f"Found matching property set: {pset_name}")
+
+            except Exception as e:
+                debug_print(f"Failed to get property sets for element: {e}")
+                continue
+
+        debug_print(f"Found {len(matching_names)} matching property set names")
+        return matching_names
+
+    def _inspect_result(self, result: Any) -> Set[str]:
+        """Inspect a result object to determine what attributes/indices are available."""
         attributes = set()
 
         debug_print(f"_inspect_result called with: {type(result)}")
@@ -525,40 +1103,31 @@ class DynamicContextResolver:
                 debug_print("Result is None")
                 return attributes
 
-            # Handle list/tuple results (this is the main issue in the failing test)
+            # Handle list/tuple results
             if isinstance(result, (list, tuple)):
                 debug_print(f"Detected list/tuple with {len(result)} items")
 
-                # Add list-specific attributes that are always available
-                attributes.add("count")  # len(list)
-
-                # Add numeric indices for list access
-                for i in range(min(len(result), 10)):  # Limit to first 10 indices
+                attributes.add("count")
+                for i in range(min(len(result), 10)):
                     attributes.add(str(i))
 
-                # Add selector keywords that work on lists
                 if hasattr(self.cache, "selector_keywords"):
                     attributes.update(self.cache.selector_keywords)
-                    debug_print("Added selector keywords for list")
 
                 debug_print(f"List result completions: {sorted(attributes)}")
                 return attributes
 
-            # Handle object results (IFC entities, etc.)
+            # Handle object results
             debug_print(f"Treating as object: {type(result)}")
 
-            # Get object's attributes
             entity_attrs = self._get_entity_attributes(result)
             attributes.update(entity_attrs)
 
-            # Add selector keywords that work on objects
             if hasattr(self.cache, "selector_keywords"):
                 attributes.update(self.cache.selector_keywords)
-                debug_print("Added selector keywords for object")
 
         except Exception as e:
             debug_print(f"Error in _inspect_result: {e}")
-            # Return at least selector keywords as fallback
             if hasattr(self.cache, "selector_keywords"):
                 attributes.update(self.cache.selector_keywords)
 
@@ -566,14 +1135,9 @@ class DynamicContextResolver:
         return attributes
 
     def _get_entity_attributes(self, entity: Any) -> Set[str]:
-        """Get attributes from any entity by direct inspection.
-
-        This method should work correctly whether called during testing or normal usage.
-        The test failure indicates that dir() inspection isn't working properly.
-        """
+        """Get attributes from any entity by direct inspection."""
         attributes = set()
 
-        # Method 1: Try __dict__ inspection first (if available)
         try:
             if hasattr(entity, "__dict__"):
                 try:
@@ -590,13 +1154,10 @@ class DynamicContextResolver:
         except Exception as e:
             debug_print(f"Error checking __dict__: {e}")
 
-        # Method 2: Always try dir() inspection (this is the main issue in the failing test)
         try:
-            # Get all attributes via dir()
             all_attrs = dir(entity)
             debug_print(f"dir() returned {len(all_attrs)} attributes")
 
-            # Filter for IFC-style attributes: uppercase, non-private
             for attr_name in all_attrs:
                 if (
                     attr_name
@@ -605,17 +1166,12 @@ class DynamicContextResolver:
                     and attr_name[0].isupper()
                     and not attr_name.startswith("_")
                 ):
-
-                    # Test if attribute is actually accessible
                     try:
                         getattr(entity, attr_name)
                         attributes.add(attr_name)
-                        debug_print(f"Added accessible attribute: {attr_name}")
                     except (AttributeError, TypeError):
-                        debug_print(f"Attribute {attr_name} not accessible")
                         continue
-                    except Exception as e:
-                        debug_print(f"Error accessing {attr_name}: {e}")
+                    except Exception:
                         continue
 
         except Exception as e:
