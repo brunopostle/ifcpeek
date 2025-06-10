@@ -65,17 +65,15 @@ class FilterQueryCompleter(Completer):
         current_word = ""
         start_position = 0
 
-        # Check if we're completing a value (after '=')
-        if "=" in text_before_cursor:
-            parts = text_before_cursor.split("=")
-            if len(parts) > 1:
-                after_equals = parts[-1]
-                if after_equals.startswith('"'):
-                    current_word = after_equals[1:]
-                    start_position = -len(after_equals)
-                else:
-                    current_word = after_equals
-                    start_position = -len(current_word) if current_word else 0
+        comparison_match = re.search(
+            r"(\w+)\s*(>=|<=|!=|\*=|!\*=|>|<|=)\s*(.*)$", text_before_cursor
+        )
+        if comparison_match:
+            # We're after a comparison operator
+            partial_value = comparison_match.group(3)  # What comes after the operator
+            current_word = partial_value
+            start_position = -len(partial_value) if partial_value else 0
+            return current_word, start_position
         else:
             # Handle negation patterns first, then fall back to original logic
 
@@ -185,14 +183,19 @@ class FilterQueryCompleter(Completer):
             context["expecting_class"] = True
             return context
 
-        # Check for value completion (after '=')
-        equals_match = re.search(r"([^,+\s]+)\s*=\s*$", text)
-        if equals_match:
+        # Check for value completion (after '=', '>' etc..)
+        comparison_match = re.search(
+            r"(\w+)\s*(>=|<=|!=|\*=|!\*=|>|<|=)\s*(.*?)$", text
+        )
+
+        if comparison_match:
             context["expecting_value"] = True
-            context["current_attribute"] = equals_match.group(1)
+            context["current_attribute"] = comparison_match.group(1)
+            context["partial_value"] = comparison_match.group(
+                3
+            )  # The part after operator
             return context
 
-        # MAIN FIX: Better detection of partial attributes after comma
         # Pattern: "IfcClass, PartialWord" where PartialWord could be partial attribute
         ifc_comma_pattern = r"Ifc[A-Za-z0-9]+\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*$"
         ifc_comma_match = re.search(ifc_comma_pattern, text)
@@ -373,7 +376,8 @@ class FilterQueryCompleter(Completer):
                                 values.add(quoted_value)
                                 successful_extractions += 1
                         elif isinstance(value, (int, float, bool)):
-                            values.add(str(value))
+                            quoted_value = f'"{str(value)}"'
+                            values.add(quoted_value)
                             successful_extractions += 1
                 except Exception as e:
                     if i < 3:  # Only log first few failures
