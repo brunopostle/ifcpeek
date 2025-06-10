@@ -202,6 +202,10 @@ class ValueExtractor:
 
         # Find all potential value queries using comprehensive patterns
         value_query_patterns = [
+            # Regex property patterns (highest priority)
+            (r"/[^/]+/\.[a-zA-Z_][a-zA-Z0-9_]*", "regex_property_set"),
+            # Standalone regex patterns
+            (r"/[^/]+/", "regex_pattern"),
             # Property set patterns (very specific)
             (r"\bPset_[a-zA-Z0-9_]+\.[a-zA-Z_][a-zA-Z0-9_]*\b", "property_set"),
             # Quantity set patterns (very specific)
