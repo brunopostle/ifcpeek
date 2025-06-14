@@ -128,6 +128,28 @@ Wall-Int-03    WT-Interior-150mm    31.8
 
 The output is tab-separated, which Excel and other tools recognize as CSV.
 
+### CSV Headers for Spreadsheet Import
+
+Enable headers mode to include column names in your CSV output:
+
+```bash
+# Toggle headers in interactive mode
+> /headers
+Headers mode enabled.
+
+> IfcWall ; Name ; type.Name ; Qto_WallBaseQuantities.NetArea
+Name	type.Name	Qto_WallBaseQuantities.NetArea
+Wall-Ext-01    WT-Exterior-200mm    24.5
+Wall-Int-02    WT-Interior-100mm    18.2
+```
+
+Or use the `--headers` command-line flag for piped input:
+
+```bash
+# Include headers when piping to CSV files
+echo 'IfcWall ; Name ; type.Name ; Qto_WallBaseQuantities.NetArea' | ifcpeek --headers model.ifc > walls.csv
+```
+
 ### Discover Available Properties
 
 Use tab completion after the semicolon to see what you can extract:
@@ -193,8 +215,8 @@ Available functions include: `upper()`, `lower()`, `title()`, `concat()`, `round
 # Find all concrete elements and get quantities
 > IfcWall, IfcSlab, material=concrete ; Name ; type.Name ; /Qto_.*Quantities/.NetVolume
 
-# Export to file for spreasheet analysis
-echo 'IfcWall, IfcSlab, material=concrete ; Name ; type.Name ; /Qto_.*Quantities/.NetVolume' | ifcpeek model.ifc > concrete_quantities.csv
+# Export to file for spreadsheet analysis with headers
+echo 'IfcWall, IfcSlab, material=concrete ; Name ; type.Name ; /Qto_.*Quantities/.NetVolume' | ifcpeek --headers model.ifc > concrete_quantities.csv
 ```
 
 ### Fire Rating Schedule
@@ -226,7 +248,7 @@ For repeated analysis, save queries to files and pipe them:
 
 ```bash
 # queries.txt contains your extraction queries
-ifcpeek model.ifc < queries.txt > results.csv
+ifcpeek --headers model.ifc < queries.txt > results.csv
 ```
 
 ### Batch Processing
@@ -235,7 +257,7 @@ ifcpeek model.ifc < queries.txt > results.csv
 # Process multiple models
 for model in *.ifc; do
   echo "Processing $model..."
-  echo 'IfcWall ; Name ; Qto_WallBaseQuantities.NetArea' | ifcpeek "$model" > "${model%.ifc}_walls.csv"
+  echo 'IfcWall ; Name ; Qto_WallBaseQuantities.NetArea' | ifcpeek --headers "$model" > "${model%.ifc}_walls.csv"
 done
 ```
 
@@ -303,6 +325,7 @@ Property 'NonExistentProperty' not found on entity #123
 - `/help` - Show complete help
 - `/exit` or `/quit` - Exit shell
 - `/debug` - Toggle debug mode during session
+- `/headers` - Toggle CSV headers mode during session
 - `Ctrl-D` - Exit shell
 
 ## Installation & Requirements
