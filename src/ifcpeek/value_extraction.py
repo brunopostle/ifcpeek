@@ -621,6 +621,22 @@ class ValueExtractor:
         debug_print("No value query found in format string")
         return ""
 
+    def extract_queries_from_format(self, format_query: str) -> str:
+        """Remove format function syntax by stripping function calls."""
+        result = format_query
+
+        while True:
+            # Find any function pattern: function_name(...)
+            match = re.search(r"[a-z_]+\s*\([^()]*\)", result)
+            if not match:
+                break
+            # Replace function(content) with just content
+            function_call = match.group(0)
+            content = re.match(r"[a-z_]+\s*\((.+)\)", function_call).group(1)
+            result = result.replace(function_call, content, 1)
+
+        return result.strip()
+
     def process_value_queries(self, elements: list, value_queries: list) -> list:
         """Process value queries for a list of elements."""
         try:
@@ -670,7 +686,7 @@ class ValueExtractor:
             try:
                 if self.is_formatting_query(value_query):
                     # Strip formatting functions to get core property name
-                    core_property = self.extract_first_value_query(value_query)
+                    core_property = self.extract_queries_from_format(value_query)
                     if core_property:
                         headers.append(core_property)
                     else:
