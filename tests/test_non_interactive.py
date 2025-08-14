@@ -396,7 +396,6 @@ class TestPerformanceInNonInteractiveMode:
                 assert initialization_time < 0.1  # Should be nearly instantaneous
 
                 # Verify expensive operations were skipped
-                assert shell.completion_cache is None
                 assert shell.completer is None
                 assert shell.session is None
 
@@ -414,7 +413,6 @@ class TestPerformanceInNonInteractiveMode:
                 shell = IfcPeek(str(temp_ifc_file))
 
                 # Should not have built large caches
-                assert shell.completion_cache is None
                 assert shell.completer is None
 
                 # Model should still be accessible for queries

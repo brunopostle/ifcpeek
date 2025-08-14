@@ -220,6 +220,5 @@ class TestNonInteractiveMode(ShellTestBase):
         """Test shell initializes properly in non-interactive mode."""
         assert shell_non_interactive.model is not None
         assert not shell_non_interactive.is_interactive
-        assert shell_non_interactive.completion_cache is None
         assert shell_non_interactive.completer is None
         assert shell_non_interactive.session is None

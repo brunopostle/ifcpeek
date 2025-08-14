@@ -129,9 +129,9 @@ class TestHistoryIntegration:
         history = FileHistory(str(history_path))
 
         unicode_commands = [
-            "IfcWall, Name=测试墙体",  # Chinese
-            "IfcDoor, Name=Дверь",  # Cyrillic
-            "IfcWindow, Name=Fenêtre",  # French
+            "IfcWall, Name=æµ‹è¯•å¢™ä½",  # Chinese
+            "IfcDoor, Name=ÐÐ²ÐµÑ€ÑŒ",  # Cyrillic
+            "IfcWindow, Name=FenÃªtre",  # French
         ]
 
         # Should handle Unicode without exceptions
@@ -181,11 +181,10 @@ class TestHistoryIntegration:
             # Mock by_type for property sets
             mock_model.by_type.return_value = []
 
-            # Mock schema properly
+            # Mock schema properly for enhanced completion system
             mock_schema_class = Mock()
-            mock_schema_class.attributes.return_value = []
-            mock_schema_class.inverse_attributes.return_value = []
-            mock_schema_class.supertypes.return_value = []
+            mock_schema_class.name.return_value = "IfcWall"
+            mock_schema_class.supertype = None
 
             mock_schema = Mock()
             mock_schema.declaration_by_name.return_value = mock_schema_class
@@ -199,8 +198,6 @@ class TestHistoryIntegration:
             ):
                 shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
-                # Completion cache should still be built despite history failure
-                assert shell.completion_cache is not None
                 assert shell.completer is not None
 
                 # Shell should work
@@ -216,25 +213,23 @@ class TestHistoryIntegration:
             # Clear any previous captured output from initialization
             capsys.readouterr()
 
-            # The most reliable way to make the completion system fail is to patch
-            # the create_dynamic_completion_system function itself
+            # Patch the enhanced completion system to fail
             original_create_fn = None
             try:
-                # Import and patch the function
-                import ifcpeek.dynamic_completion as dc_module
+                # Import and patch the enhanced completion function
+                import ifcpeek.completion as ec_module
 
-                original_create_fn = dc_module.create_dynamic_completion_system
+                original_create_fn = ec_module.create_completion_system
 
                 def failing_create_system(model):
-                    raise Exception("Completion system creation failed")
+                    raise Exception("Enhanced completion system creation failed")
 
-                dc_module.create_dynamic_completion_system = failing_create_system
+                ec_module.create_completion_system = failing_create_system
 
-                # Now create the shell - this should trigger the completion cache failure
+                # Now create the shell - this should trigger the completion system failure
                 shell = IfcPeek(str(mock_ifc_file), force_interactive=True)
 
-                # Verify that completion cache failed to build
-                assert shell.completion_cache is None
+                # Verify that completion system failed to build
                 assert shell.completer is None
 
                 # But shell should still work for basic operations
@@ -247,7 +242,7 @@ class TestHistoryIntegration:
             finally:
                 # Restore the original function
                 if original_create_fn:
-                    dc_module.create_dynamic_completion_system = original_create_fn
+                    ec_module.create_completion_system = original_create_fn
 
     def test_run_method_handles_no_session(self, mock_ifc_file, capsys):
         """Test that run method handles cases where session is None."""

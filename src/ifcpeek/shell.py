@@ -72,31 +72,25 @@ class IfcPeek:
         if self.is_interactive:
             try:
                 debug_print("Building enhanced completion system...")
-                from .dynamic_completion import create_dynamic_completion_system
+                from .completion import create_completion_system
 
-                (
-                    self.completion_cache,
-                    self.completer,
-                ) = create_dynamic_completion_system(self.model)
+                self.completer = create_completion_system(self.model)
 
-                # Print summary of what was cached
-                debug_info = self.completer.get_debug_info()
-                debug_print(
-                    f"Enhanced completion ready: {debug_info['total_classes']} classes, "
-                    f"{debug_info['cached_attributes']} classes with attributes, "
-                    f"{debug_info['property_sets']} property sets"
-                )
+                debug_print("Enhanced completion system ready")
+                debug_print("- Supports both filter queries and value extraction")
+                debug_print("- Uses IfcOpenShell for all operations")
+                debug_print("- Context-aware completions")
+                debug_print("- Dynamic property set discovery")
 
             except Exception as e:
                 warning_print(f"Failed to build enhanced completion system: {e}")
                 if is_debug_enabled():
                     traceback.print_exc(file=sys.stderr)
-                self.completion_cache = None
                 self.completer = None
+
         else:
             # Skip completion system for non-interactive mode
             debug_print("Skipping completion system for non-interactive mode")
-            self.completion_cache = None
             self.completer = None
 
         # Create session only for interactive mode
