@@ -267,22 +267,30 @@ class IfcCompleter(Completer):
             elif completion_type == "attributes_and_keywords":
                 # Extract cumulative filter to get relevant classes
                 cumulative_filter = self._extract_cumulative_filter(text_before_cursor)
-                elements = self._apply_cumulative_filter(cumulative_filter)
+                debug_print(f"Cumulative filter: '{cumulative_filter}'")
 
-                # Add IFC classes for union queries
+                # ALWAYS add IFC classes for union queries (e.g., "IfcWall, IfcWindow, Ifc...")
                 completions.update(self._get_ifc_classes())
 
-                # Add filter keywords
+                # ALWAYS add filter keywords
                 completions.update(self.filter_keywords)
 
-                # Add attributes based on filtered elements - NO FALLBACK
-                if elements:
-                    attributes = self._extract_attributes_from_elements(elements[:5])
-                    completions.update(attributes)
+                # If we have a valid filter, get ALL elements that match it
+                if cumulative_filter.strip():
+                    try:
+                        elements = self._apply_cumulative_filter(cumulative_filter)
+                        debug_print(f"Selector query returned {len(elements)} elements")
 
-                    # Add actual property sets from elements - NO FALLBACK
-                    pset_names = self._extract_property_set_names(elements[:5])
-                    completions.update(pset_names)
+                        if elements:
+                            # Extract actual attributes that exist on these specific elements
+                            attributes = self._extract_attributes_from_elements(elements)
+                            completions.update(attributes)
+
+                            # Extract actual property sets from these specific elements
+                            pset_names = self._extract_property_set_names(elements)
+                            completions.update(pset_names)
+                    except Exception as e:
+                        debug_print(f"Error running selector query '{cumulative_filter}': {e}")
 
                 # Always add property set patterns for typing convenience
                 completions.add("Pset_")
@@ -294,9 +302,8 @@ class IfcCompleter(Completer):
 
                 prefix = self._extract_property_set_prefix(text_before_cursor)
                 if elements:
-                    pset_names = self._extract_property_set_names(elements[:5], prefix)
+                    pset_names = self._extract_property_set_names(elements, prefix)
                     completions.update(pset_names)
-                # NO FALLBACK - if no elements, no completions
 
             elif completion_type == "property_names":
                 cumulative_filter = self._extract_cumulative_filter(text_before_cursor)
@@ -304,29 +311,18 @@ class IfcCompleter(Completer):
 
                 pset_name = self._extract_property_set_name(text_before_cursor)
                 if elements and pset_name:
-                    properties = self._extract_property_names(elements[:5], pset_name)
+                    properties = self._extract_property_names(elements, pset_name)
                     completions.update(properties)
-                # NO FALLBACK - if no elements or pset_name, no completions
 
             elif completion_type == "attribute_values":
                 cumulative_filter = self._extract_cumulative_filter(text_before_cursor)
                 elements = self._apply_cumulative_filter(cumulative_filter)
 
                 attribute_name = self._extract_attribute_name(text_before_cursor)
-                debug_print(
-                    f"Extracting values for attribute: '{attribute_name}' from {len(elements)} elements"
-                )
-
                 if elements and attribute_name:
-                    values = self._extract_attribute_values(
-                        elements[:20], attribute_name
-                    )
+                    values = self._extract_attribute_values(elements, attribute_name)
                     completions.update(values)
                     debug_print(f"Found {len(values)} attribute values")
-                else:
-                    debug_print(
-                        "No elements or attribute name found for value extraction"
-                    )
 
             elif completion_type == "comparison_operators":
                 completions.update(self.comparison_operators)
@@ -334,9 +330,7 @@ class IfcCompleter(Completer):
             # Filter completions by current word and yield
             for completion_text in sorted(completions):
                 if self._matches_word(completion_text, current_word):
-                    yield Completion(
-                        text=completion_text, start_position=start_position
-                    )
+                    yield Completion(text=completion_text, start_position=start_position)
 
         except Exception as e:
             debug_print(f"Filter completion error: {e}")
@@ -547,38 +541,83 @@ class IfcCompleter(Completer):
             return []
 
     def _extract_attributes_from_elements(self, elements: List) -> Set[str]:
-        """Extract attributes from elements using direct inspection."""
+        """Extract actual attributes from all filtered elements."""
         attributes = set()
-        attributes.update(self.common_attributes)
+        processed_classes = set()
 
         for element in elements:
             try:
-                # Get attributes via __dict__
-                if hasattr(element, "__dict__"):
-                    dict_attrs = [
-                        k for k in element.__dict__.keys() if k and k[0].isupper()
-                    ]
-                    attributes.update(dict_attrs)
+                class_name = element.is_a()
 
-                # Get attributes via dir()
-                for attr_name in dir(element):
-                    if (
-                        attr_name
-                        and attr_name[0].isupper()
-                        and not attr_name.startswith("_")
-                    ):
-                        try:
-                            getattr(element, attr_name)
-                            attributes.add(attr_name)
-                        except Exception:
-                            continue
+                # Only process schema for each class once
+                if class_name not in processed_classes:
+                    processed_classes.add(class_name)
+
+                    # Method 1: Check IFC schema attributes for this class
+                    try:
+                        if hasattr(self.model, "schema") and hasattr(
+                            self.model.schema, "declaration_by_name"
+                        ):
+                            class_def = self.model.schema.declaration_by_name(class_name)
+                            if class_def and hasattr(class_def, "all_attributes"):
+                                for attr in class_def.all_attributes():
+                                    if hasattr(attr, "name"):
+                                        attr_name = attr.name()
+                                        if attr_name and attr_name[0].isupper():
+                                            attributes.add(attr_name)
+                    except Exception:
+                        pass
+
+                # Method 2: Check actual attribute values on element
+                try:
+                    for attr_name in dir(element):
+                        if (
+                            attr_name
+                            and attr_name[0].isupper()
+                            and not attr_name.startswith("_")
+                            and not callable(getattr(element, attr_name, None))
+                        ):
+                            try:
+                                getattr(element, attr_name)
+                                attributes.add(attr_name)
+                            except Exception:
+                                continue
+                except Exception:
+                    pass
+
+                # Method 3: Check __dict__ for stored attributes
+                try:
+                    if hasattr(element, "__dict__"):
+                        for attr_name in element.__dict__.keys():
+                            if attr_name and attr_name[0].isupper():
+                                attributes.add(attr_name)
+                except Exception:
+                    pass
+
             except Exception:
                 continue
 
+        # Method 4: Test common IFC attributes on sample elements
+        common_ifc_attrs = [
+            "Name", "Description", "Tag", "ObjectType", "GlobalId",
+            "PredefinedType", "OwnerHistory", "ObjectPlacement", "Representation"
+        ]
+        test_elements = elements[: min(10, len(elements))]
+        for attr_name in common_ifc_attrs:
+            for element in test_elements:
+                try:
+                    if hasattr(element, attr_name):
+                        getattr(element, attr_name)
+                        attributes.add(attr_name)
+                        break
+                except Exception:
+                    continue
+
+        debug_print(f"Extracted {len(attributes)} attributes from {len(elements)} elements")
         return attributes
 
     def _extract_property_set_names(self, elements: List, prefix: str = "") -> Set[str]:
-        """Extract property set names from elements."""
+        """Extract property set names from all filtered elements."""
         pset_names = set()
 
         for element in elements:
@@ -590,10 +629,11 @@ class IfcCompleter(Completer):
             except Exception:
                 continue
 
+        debug_print(f"Found {len(pset_names)} property set names")
         return pset_names
 
     def _extract_property_names(self, elements: List, pset_name: str) -> Set[str]:
-        """Extract property names within a property set."""
+        """Extract property names within a property set from all filtered elements."""
         properties = set()
 
         for element in elements:
@@ -606,74 +646,60 @@ class IfcCompleter(Completer):
             except Exception:
                 continue
 
+        debug_print(f"Found {len(properties)} properties in '{pset_name}'")
         return properties
 
     def _extract_attribute_values(
         self, elements: List, attribute_name: str
     ) -> Set[str]:
-        """Extract attribute values from elements."""
-        debug_print(
-            f"Extracting attribute values for: '{attribute_name}' from {len(elements)} elements"
-        )
-
+        """Extract attribute values from all filtered elements."""
         values = set()
         found_boolean = False
 
         # Handle property set properties like "Pset_WallCommon.LoadBearing"
         if "." in attribute_name:
-            # This is a property set property query
             try:
                 pset_name, prop_name = attribute_name.rsplit(".", 1)
-                debug_print(f"Extracting property values: {pset_name}.{prop_name}")
 
                 for element in elements:
                     try:
                         psets = ifcopenshell.util.element.get_psets(element)
                         if pset_name in psets and prop_name in psets[pset_name]:
                             value = psets[pset_name][prop_name]
-                            debug_print(f"Found value: {value} (type: {type(value)})")
                             if value is not None:
                                 if isinstance(value, bool):
                                     found_boolean = True
-                                    debug_print("Detected boolean property")
                                 elif isinstance(value, str) and value.strip():
                                     values.add(f'"{value.strip()}"')
                                 elif isinstance(value, (int, float)):
                                     values.add(f'"{str(value)}"')
-                    except Exception as e:
-                        debug_print(f"Error extracting from element: {e}")
+                    except Exception:
                         continue
             except ValueError:
-                debug_print(f"Could not split attribute name: {attribute_name}")
+                pass
         else:
             # Regular attribute or keyword - use value query mapping
             value_query = self._map_attribute_to_value_query(attribute_name)
-            debug_print(f"Using value query: {value_query}")
 
             for element in elements:
                 try:
                     value = ifcopenshell.util.selector.get_element_value(
                         element, value_query
                     )
-                    debug_print(f"Found value: {value} (type: {type(value)})")
                     if value is not None:
                         if isinstance(value, bool):
                             found_boolean = True
-                            debug_print("Detected boolean property")
                         elif isinstance(value, str) and value.strip():
                             values.add(f'"{value.strip()}"')
                         elif isinstance(value, (int, float)):
                             values.add(f'"{str(value)}"')
-                except Exception as e:
-                    debug_print(f"Error extracting value: {e}")
+                except Exception:
                     continue
 
         # If any boolean values found, this is a boolean property
         if found_boolean:
-            debug_print("Returning boolean options: TRUE, FALSE")
             return {"TRUE", "FALSE"}
 
-        debug_print(f"Returning {len(values)} string/numeric values")
         return values
 
     def _map_attribute_to_value_query(self, attribute_name: str) -> str:
@@ -731,21 +757,25 @@ class IfcCompleter(Completer):
                 debug_print(f"Detected comparison operator completion after: {word}")
                 return "comparison_operators"
 
-        # Check for start of query or after separators: "", ", ", "+ "
+        # FIXED: Check for attributes and keywords after IFC classes
+        # This should have higher priority than the general IFC class check
+        if re.search(r"Ifc[A-Za-z0-9]+\s*,\s*", text_before_cursor):
+            debug_print("Detected attributes and keywords completion after IFC class")
+            return "attributes_and_keywords"
+
+        # Check for trailing comma (after any content): "anything, "
+        if re.search(r",\s*$", text_before_cursor):
+            debug_print("Detected attributes and keywords completion after comma")
+            return "attributes_and_keywords"
+
+        # Check for start of query or after separators: "", "+ "
         if (
             not text_before_cursor.strip()
-            or re.search(r"[,+]\s*[A-Za-z]*$", text_before_cursor)
+            or re.search(r"[+]\s*[A-Za-z]*$", text_before_cursor)
             or re.search(r"^\s*[A-Za-z]*$", text_before_cursor)
         ):
-            debug_print("Detected IFC class completion (start or after separator)")
+            debug_print("Detected IFC class completion (start or after + separator)")
             return "ifc_classes"
-
-        # Check for attributes and keywords after IFC class: "IfcWall, " or "IfcWall, IfcWindow, "
-        if re.search(r"Ifc[A-Za-z0-9]+\s*,\s*", text_before_cursor) or re.search(
-            r",\s*$", text_before_cursor
-        ):
-            debug_print("Detected attributes and keywords completion")
-            return "attributes_and_keywords"
 
         # Default to IFC classes
         debug_print("Defaulting to IFC class completion")
@@ -772,36 +802,79 @@ class IfcCompleter(Completer):
 
     def _extract_cumulative_filter(self, text_before_cursor: str) -> str:
         """Extract the cumulative filter query from text before cursor."""
-        # For filter context, we need to be more careful about what to include
-        # Remove the incomplete word at the end, but keep complete filter components
-
         debug_print(f"Extracting cumulative filter from: '{text_before_cursor}'")
 
-        # Split by commas and plus signs
-        parts = re.split(r"[,+]", text_before_cursor)
-        complete_parts = []
+        text = text_before_cursor.strip()
 
-        for i, part in enumerate(parts):
-            part = part.strip()
-            if not part:
-                continue
+        # If empty or just whitespace, return empty
+        if not text:
+            debug_print("Empty text - returning empty filter")
+            return ""
 
-            # If this is the last part and it's incomplete, we need to decide what to do
-            if i == len(parts) - 1:
-                # Check if the last part is a complete filter component
+        # Strategy: Remove the incomplete word at the end that we're trying to complete
+
+        # Case 1: Text ends with comma and optional whitespace
+        if text.endswith(",") or (
+            text.endswith(" ") and "," in text and text.split(",")[-1].strip() == ""
+        ):
+            # Find the last comma and use everything before it
+            last_comma_pos = text.rfind(",")
+            if last_comma_pos != -1:
+                result = text[:last_comma_pos].strip()
+                debug_print(f"Text ends with comma - using: '{result}'")
+                return result
+
+        # Case 2: Text ends with incomplete word after comma
+        if "," in text:
+            parts = text.split(",")
+            if len(parts) > 1:
+                last_part = parts[-1].strip()
+                everything_before = ",".join(parts[:-1]).strip()
+
+                debug_print(
+                    f"Found potential incomplete word: '{last_part}' after comma"
+                )
+
+                # Check if the last part is actually a complete filter component
+
+                # Has comparison operators - it's complete
+                if any(
+                    op in last_part
+                    for op in [">=", "<=", "!=", "*=", "!*=", ">", "<", "="]
+                ):
+                    debug_print(f"Last part contains operators - including it")
+                    return text
+
+                # Property set with dot - it's complete
                 if (
-                    re.match(r"^Ifc[A-Za-z0-9]+$", part)
-                    or re.search(r"[>=<!]", part)  # Complete IFC class
-                    or part in self.filter_keywords  # Has comparison operator
-                ):  # Is a complete keyword
-                    complete_parts.append(part)
-            else:
-                # Not the last part, include it
-                complete_parts.append(part)
+                    last_part.startswith(("Pset_", "Qto_", "EPset_"))
+                    and "." in last_part
+                ):
+                    debug_print(f"Last part is property set reference - including it")
+                    return text
 
-        cumulative = ",".join(complete_parts).strip()
-        debug_print(f"Extracted cumulative filter: '{cumulative}'")
-        return cumulative
+                # Known filter keyword - it's complete
+                if last_part in self.filter_keywords:
+                    debug_print(f"Last part is filter keyword - including it")
+                    return text
+
+                # Complete IFC class - it's complete
+                if (
+                    last_part.startswith("Ifc")
+                    and last_part[3:].replace("_", "").isalnum()
+                ):
+                    debug_print(f"Last part is complete IFC class - including it")
+                    return text
+
+                # Otherwise, it's truly incomplete - use everything before the last comma
+                debug_print(
+                    f"Truly incomplete word - using before comma: '{everything_before}'"
+                )
+                return everything_before
+
+        # Case 3: No comma structure - use entire text
+        debug_print(f"No comma structure found - using entire text: '{text}'")
+        return text
 
     def _extract_property_set_prefix(self, text_before_cursor: str) -> str:
         """Extract property set prefix from text."""
