@@ -98,17 +98,23 @@ Located in `completion.py`, the completion system is one of the most complex par
 
 - **Context-Aware**: Analyzes query position (before/after semicolon) to provide different completions
 - **Model-Driven**: Scans actual IFC model to discover available classes, property sets, and attributes
-- **Dynamic**: Uses IfcOpenShell to query ALL filtered elements to discover their properties
-- **Comprehensive**: Processes all filtered elements (not sampled) for consistent, accurate completions
+- **Schema-Aware**: Traverses IFC schema hierarchy to include abstract parent classes (e.g., IfcBuildingElement)
+- **Dynamic**: Samples filtered elements to discover their properties and attributes
+- **Intelligent Sampling**: Samples up to 50 elements (increased from 5) for better attribute discovery
 - **Lazy-Loading**: Builds caches on-demand to minimize startup time
 
 Key methods:
 - `completion.py:create_completion_system()`: Entry point that builds the completer
 - `IfcCompleter.get_completions()`: Routes to filter or value completion handlers
-- Filter completions: IFC classes, attributes, keywords (material, type, location)
-- Value completions: Context-aware based on filtered element types
+- `IfcCompleter._get_ifc_classes()`: Collects IFC classes including parent classes via schema traversal
+- Filter completions: IFC classes, attributes, keywords (material, type, location), property sets
+- Value completions: Context-aware based on filtered element types, includes relationship attributes
 
-**Important**: The completion system processes ALL elements returned by filters (not sampled subsets) to ensure completions accurately reflect what exists in the filtered result set. This approach prioritizes correctness and consistency over potential performance optimization.
+**Important Schema Access**: The completion system uses `ifcopenshell.ifcopenshell_wrapper.schema_by_name()` to access the IFC schema object. Note that `model.schema` is a string (e.g., "IFC4"), not the schema object itself. The schema object provides `declaration_by_name()` for class definitions and `supertype()` methods for hierarchy traversal.
+
+**Sampling Strategy**: Value context completions sample up to 50 elements to discover attributes and properties. Filter context processes all elements returned by queries. This balances performance with completeness.
+
+**Tuple/List Handling**: When completing paths that resolve to tuples or lists (e.g., relationship attributes like `ConnectedTo`), the system only offers appropriate completions like `count` and numeric indices, not general selector keywords.
 
 ### Value Extraction System
 
@@ -209,11 +215,21 @@ Formatting functions are handled by IfcOpenShell's selector syntax. IfcPeek pass
 ### Modifying Completion Behavior
 
 The completion system is complex. Key areas:
-- `completion.py:IfcCompleter._complete_filter_query()`: Filter context completions
-- `completion.py:IfcCompleter._complete_value_query()`: Value extraction completions
+- `completion.py:IfcCompleter._get_filter_completions()`: Filter context completions
+- `completion.py:IfcCompleter._get_value_completions()`: Value extraction completions
+- `completion.py:IfcCompleter._determine_filter_completion_type()`: Context detection logic
+- `completion.py:IfcCompleter._resolve_value_path_completions()`: Value path resolution
 - Add new keywords to `selector_keywords` or `filter_keywords` sets
 
-**Important implementation detail**: Extraction methods (`_extract_attributes_from_elements()`, `_extract_property_set_names()`, `_extract_property_names()`, `_extract_attribute_values()`) process ALL elements in the filtered result set, not sampled subsets. This ensures completions are accurate and consistent with what users will actually query. Performance optimization should be done carefully to maintain this consistency guarantee.
+**Important implementation details**:
+
+1. **Schema Traversal**: Uses `ifcopenshell.ifcopenshell_wrapper.schema_by_name(model.schema)` to get the schema object, then `declaration_by_name(class_name)` to get class definitions. The `supertype()` method (not property!) returns the parent class declaration.
+
+2. **Filter Extraction**: When completing incomplete filter queries (e.g., `IfcWall, Pset_WallCommon.` or `IfcWall, Name=`), the system must extract a valid filter by removing the incomplete part before calling `filter_elements()`. Helper methods `_extract_cumulative_filter_before_pset_dot()` and `_extract_cumulative_filter_before_equals()` handle this.
+
+3. **Sampling Strategy**: Value completions sample up to 50 elements (`elements[:50]`). Filter attribute extraction processes all filtered elements for accuracy.
+
+4. **Tuple Detection**: Path completions check if results are tuples/lists and conditionally add selector keywords. Tuples get `count` and numeric indices; objects get selector keywords like `building`, `type`, etc.
 
 ## Testing Strategy
 
@@ -226,8 +242,24 @@ Key test areas:
 - Interactive vs non-interactive mode detection
 - Query parsing and execution
 - Value extraction with formatting
-- Completion system behavior
+- Completion system behavior (extensive regression tests in `test_completion_regressions.py`)
 - Error handling and edge cases
+
+### Completion System Testing
+
+`tests/test_completion_regressions.py` contains comprehensive regression tests covering:
+- Space after IFC class completion
+- Property completion in filter and value contexts
+- Attribute value completion
+- Relationship attribute discovery
+- Tuple/list result handling
+- Parent class inclusion via schema hierarchy
+
+The test suite uses extensive mocking to simulate IfcOpenShell behavior without requiring actual IFC files. Key mocking areas:
+- `ifcopenshell.util.selector.filter_elements`
+- `ifcopenshell.util.selector.get_element_value`
+- `ifcopenshell.util.element.get_psets`
+- `ifcopenshell.ifcopenshell_wrapper.schema_by_name` (returns mock schema with proper hierarchy)
 
 ## Development Philosophy
 
