@@ -306,19 +306,30 @@ class IfcCompleter(Completer):
                     completions.update(pset_names)
 
             elif completion_type == "property_names":
-                cumulative_filter = self._extract_cumulative_filter(text_before_cursor)
+                # Extract property set name from the current query
+                pset_name = self._extract_property_set_name(text_before_cursor)
+                debug_print(f"Extracting properties for property set: '{pset_name}'")
+
+                # FIXED: Don't include the ".PropertyName" part in the cumulative filter
+                # Remove the property set reference to get a valid filter query
+                cumulative_filter = self._extract_cumulative_filter_before_pset_dot(text_before_cursor)
+                debug_print(f"Cumulative filter (before pset.): '{cumulative_filter}'")
+
                 elements = self._apply_cumulative_filter(cumulative_filter)
 
-                pset_name = self._extract_property_set_name(text_before_cursor)
                 if elements and pset_name:
                     properties = self._extract_property_names(elements, pset_name)
                     completions.update(properties)
 
             elif completion_type == "attribute_values":
-                cumulative_filter = self._extract_cumulative_filter(text_before_cursor)
+                # FIXED: Remove the "=value" part to get a valid filter query
+                attribute_name = self._extract_attribute_name(text_before_cursor)
+                cumulative_filter = self._extract_cumulative_filter_before_equals(text_before_cursor)
+                debug_print(f"Cumulative filter (before =): '{cumulative_filter}'")
+                debug_print(f"Attribute name: '{attribute_name}'")
+
                 elements = self._apply_cumulative_filter(cumulative_filter)
 
-                attribute_name = self._extract_attribute_name(text_before_cursor)
                 if elements and attribute_name:
                     values = self._extract_attribute_values(elements, attribute_name)
                     completions.update(values)
@@ -357,8 +368,14 @@ class IfcCompleter(Completer):
                 debug_print("No elements found, returning empty completions")
                 return
             else:
+                # IMPROVED: Sample more elements for better attribute discovery
+                # Use up to 50 elements (or all if fewer) for comprehensive completion
+                sample_size = min(50, len(elements))
+                sampled_elements = elements[:sample_size]
+                debug_print(f"Sampling {sample_size} elements for value completions")
+
                 completions = self._resolve_value_path_completions(
-                    elements[:5], current_value_path
+                    sampled_elements, current_value_path
                 )
                 debug_print(f"Resolved {len(completions)} value completions")
 
@@ -395,11 +412,34 @@ class IfcCompleter(Completer):
                 completions.update(self.selector_keywords)
                 completions.update(self.common_attributes)
 
+                # IMPROVED: Add actual attributes from the filtered elements
+                actual_attributes = self._extract_attributes_from_elements(elements)
+                completions.update(actual_attributes)
+                debug_print(f"Added {len(actual_attributes)} actual attributes")
+
                 # Add property sets available on these elements
                 for element in elements:
                     try:
                         psets = ifcopenshell.util.element.get_psets(element)
                         completions.update(psets.keys())
+                    except Exception:
+                        continue
+
+                return completions
+
+            # FIXED: Check property completion BEFORE property set name completion
+            # Handle property completion within property sets: "Pset_WallCommon." -> properties
+            if self._is_property_completion(current_value_path):
+                pset_name = current_value_path.rstrip(".")
+                debug_print(f"Property completion for property set: '{pset_name}'")
+
+                for element in elements:
+                    try:
+                        psets = ifcopenshell.util.element.get_psets(element)
+                        if pset_name in psets:
+                            for prop_name in psets[pset_name].keys():
+                                if prop_name != "id":
+                                    completions.add(prop_name)
                     except Exception:
                         continue
 
@@ -416,23 +456,6 @@ class IfcCompleter(Completer):
                         for pset_name in psets.keys():
                             if pset_name.startswith(prefix):
                                 completions.add(pset_name)
-                    except Exception:
-                        continue
-
-                return completions
-
-            # Handle property completion within property sets: "Pset_WallCommon." -> properties
-            if self._is_property_completion(current_value_path):
-                pset_name = current_value_path.rstrip(".")
-                debug_print(f"Property completion for property set: '{pset_name}'")
-
-                for element in elements:
-                    try:
-                        psets = ifcopenshell.util.element.get_psets(element)
-                        if pset_name in psets:
-                            for prop_name in psets[pset_name].keys():
-                                if prop_name != "id":
-                                    completions.add(prop_name)
                     except Exception:
                         continue
 
@@ -457,19 +480,32 @@ class IfcCompleter(Completer):
                     partial_path = ".".join(path_parts[:-1])
                     debug_print(f"Path completion after dot: '{partial_path}'")
 
+                    # Track if we encounter tuple/list results
+                    has_tuple_results = False
+
                     for element in elements:
                         try:
                             result = ifcopenshell.util.selector.get_element_value(
                                 element, partial_path
                             )
                             if result is not None:
+                                # Check if this is a tuple/list
+                                if isinstance(result, (list, tuple)):
+                                    has_tuple_results = True
+
                                 attrs = self._inspect_object_attributes(result)
                                 completions.update(attrs)
                         except Exception:
                             continue
 
-                    # Add selector keywords that work on any object
-                    completions.update(self.selector_keywords)
+                    # IMPROVED: Only add selector keywords for non-tuple/non-list results
+                    # Tuples/lists should only offer numeric indices and 'count'
+                    if not has_tuple_results:
+                        completions.update(self.selector_keywords)
+                        debug_print("Added selector keywords for object navigation")
+                    else:
+                        debug_print("Skipped selector keywords (tuple/list result)")
+
                     return completions
 
             # Default: try to complete as a partial path
@@ -555,16 +591,17 @@ class IfcCompleter(Completer):
 
                     # Method 1: Check IFC schema attributes for this class
                     try:
-                        if hasattr(self.model, "schema") and hasattr(
-                            self.model.schema, "declaration_by_name"
-                        ):
-                            class_def = self.model.schema.declaration_by_name(class_name)
-                            if class_def and hasattr(class_def, "all_attributes"):
-                                for attr in class_def.all_attributes():
-                                    if hasattr(attr, "name"):
-                                        attr_name = attr.name()
-                                        if attr_name and attr_name[0].isupper():
-                                            attributes.add(attr_name)
+                        # FIXED: Get the actual schema object from ifcopenshell
+                        import ifcopenshell.ifcopenshell_wrapper as wrapper
+                        schema = wrapper.schema_by_name(self.model.schema)
+
+                        class_def = schema.declaration_by_name(class_name)
+                        if class_def and hasattr(class_def, "all_attributes"):
+                            for attr in class_def.all_attributes():
+                                if hasattr(attr, "name"):
+                                    attr_name = attr.name()
+                                    if attr_name and attr_name[0].isupper():
+                                        attributes.add(attr_name)
                     except Exception:
                         pass
 
@@ -768,6 +805,11 @@ class IfcCompleter(Completer):
             debug_print("Detected attributes and keywords completion after comma")
             return "attributes_and_keywords"
 
+        # FIXED: Check for space after IFC class without comma: "IfcWall "
+        if re.search(r"Ifc[A-Za-z0-9]+\s+$", text_before_cursor):
+            debug_print("Detected attributes and keywords completion after IFC class with space")
+            return "attributes_and_keywords"
+
         # Check for start of query or after separators: "", "+ "
         if (
             not text_before_cursor.strip()
@@ -777,9 +819,9 @@ class IfcCompleter(Completer):
             debug_print("Detected IFC class completion (start or after + separator)")
             return "ifc_classes"
 
-        # Default to IFC classes
-        debug_print("Defaulting to IFC class completion")
-        return "ifc_classes"
+        # Default to attributes and keywords for safety (more useful than IFC classes)
+        debug_print("Defaulting to attributes and keywords completion")
+        return "attributes_and_keywords"
 
     def _is_property_set_name_completion(self, value_path: str) -> bool:
         """Check if this is property set name completion."""
@@ -794,11 +836,13 @@ class IfcCompleter(Completer):
 
     def _is_property_completion(self, value_path: str) -> bool:
         """Check if this is property completion within a property set."""
-        return value_path.endswith(".") and (
-            value_path.startswith("Pset_")
-            or value_path.startswith("Qto_")
-            or value_path.startswith("EPset_")
-        )
+        # FIXED: Check if the path contains a property set pattern followed by dot
+        # Example: "Pset_WallCommon." -> True
+        if value_path.endswith("."):
+            # Check if what comes before the dot is a property set name
+            base = value_path.rstrip(".")
+            return bool(re.match(r"^(Pset_|Qto_|EPset_|[A-Z]\w*_\w+)$", base))
+        return False
 
     def _extract_cumulative_filter(self, text_before_cursor: str) -> str:
         """Extract the cumulative filter query from text before cursor."""
@@ -909,6 +953,33 @@ class IfcCompleter(Completer):
         debug_print("No attribute name found")
         return ""
 
+    def _extract_cumulative_filter_before_pset_dot(self, text_before_cursor: str) -> str:
+        """Extract cumulative filter before property set dot notation."""
+        # Remove the "Pset_PropertySetName." part to get valid filter
+        # Example: "IfcWall, Pset_WallCommon." -> "IfcWall"
+        match = re.search(r"^(.+?),\s*[PQE][a-zA-Z0-9_]+\.\s*$", text_before_cursor)
+        if match:
+            return match.group(1).strip()
+
+        # If no match, use the regular extraction but try to clean it up
+        return self._extract_cumulative_filter(text_before_cursor)
+
+    def _extract_cumulative_filter_before_equals(self, text_before_cursor: str) -> str:
+        """Extract cumulative filter before equals sign."""
+        # Remove the "AttributeName=value" part to get valid filter
+        # Example: "IfcWall, Name=" -> "IfcWall"
+        match = re.search(r"^(.+?),\s*\w+\s*[>=<!]+\s*", text_before_cursor)
+        if match:
+            return match.group(1).strip()
+
+        # Try without comma
+        match = re.search(r"^(.+?)\s+\w+\s*[>=<!]+\s*", text_before_cursor)
+        if match:
+            return match.group(1).strip()
+
+        # If no match, use the regular extraction
+        return self._extract_cumulative_filter(text_before_cursor)
+
     # ============================
     # Lazy Loading Methods
     # ============================
@@ -918,6 +989,11 @@ class IfcCompleter(Completer):
         if self._ifc_classes is None:
             self._ifc_classes = set()
             try:
+                # FIXED: Get the actual schema object from ifcopenshell
+                # model.schema is a string like "IFC4", not the schema object
+                import ifcopenshell.ifcopenshell_wrapper as wrapper
+                schema = wrapper.schema_by_name(self.model.schema)
+
                 # Get classes from actual entities
                 for entity in self.model:
                     try:
@@ -926,16 +1002,18 @@ class IfcCompleter(Completer):
 
                         # Add parent classes by checking schema hierarchy
                         try:
-                            entity_info = self.model.schema.declaration_by_name(
-                                class_name
-                            )
+                            entity_info = schema.declaration_by_name(class_name)
                             # Walk up the inheritance hierarchy
+                            # FIXED: supertype is a method, not a property - must call it
                             current = entity_info
-                            while hasattr(current, "supertype") and current.supertype:
-                                parent_name = current.supertype.name()
+                            while hasattr(current, "supertype"):
+                                parent = current.supertype()  # Call the method
+                                if parent is None:
+                                    break
+                                parent_name = parent.name()
                                 if parent_name.startswith("Ifc"):
                                     self._ifc_classes.add(parent_name)
-                                current = current.supertype
+                                current = parent
                         except Exception as e:
                             debug_print(
                                 f"Could not traverse hierarchy for {class_name}: {e}"
